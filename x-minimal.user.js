@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.12.1
+// @version      1.12.2
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -1816,7 +1816,7 @@
     try{const saved=GM_getValue(PERF_KEY,null);if(saved&&Date.now()-saved.at<REMEMBER)level=Math.min(2,Math.max(0,Number(saved.level)||0));}catch{}
     let target=null,layer=null,style=null,canvas=null,gl=null,rim=null,gauss=null,quad=null,sharp=null,blurred=null;
     let framebuffer=null,sourceImage=null,sourceKey='',paintKey='',blocked='',blockedImage=null,lastState='',disposed=false;
-    let raf=0,scrollTimer=0,activeUntil=0,lastFrame=0,best=1000/60,strikes=0,samples=[],rimHidden=false;
+    let raf=0,scrollTimer=0,activeUntil=0,lastFrame=0,best=1000/60,strikes=0,samples=[],rimHidden=false,paintEdges='';
     const uniforms=new Map();
     function emit(renderer,reason=''){
       const reasons={'not-visible':'此區域目前不在畫面內','context-lost':'WebGL 內容已中斷，暫用毛玻璃','reduced-transparency':'依系統減少透明度','forced-colors':'依系統高對比配色','backdrop-unavailable':'瀏覽器不支援背景模糊，使用實色','manual-lite':'已啟用輕量模式','performance-lite':'效能自動降級','image-unavailable':'背景圖片暫不可取樣，使用毛玻璃','image-security':'圖片未提供跨來源存取，使用毛玻璃','webgl-unavailable':'WebGL 暫不可用，使用毛玻璃'};
@@ -1915,9 +1915,28 @@
       }
     }
     function uniform(name){if(!uniforms.has(name))uniforms.set(name,gl.getUniformLocation(rim,name));return uniforms.get(name);}
+    // Only the refraction band and highlight near the edges are drawn; the middle is the CSS blur. An edge scrolled
+    // far off screen leaves every visible pixel unchanged, so it does not count as a change.
+    function edgeKey(rect,visible){
+      const far=BAND+(rect.radius??RADIUS)+8;
+      return [rect.left<visible.left-far?'far':rect.left,rect.top<visible.top-far?'far':rect.top,rect.right>visible.left+visible.width+far?'far':rect.right,rect.bottom>visible.top+visible.height+far?'far':rect.bottom,visible.left,visible.top,visible.width,visible.height].join('|');
+    }
+    function measure(){
+      const own=target.getBoundingClientRect(),extra=options.extendTop?.()||0;
+      const box=extra>0?{left:own.left,right:own.right,width:own.width,top:own.top-extra,bottom:own.bottom,height:own.height+extra}:own;
+      const ratio=(size,layout)=>layout&&Math.abs(size/layout-1)>.01?size/layout:1;
+      const sx=options.local?ratio(own.width,target.offsetWidth):1,sy=options.local?ratio(own.height,target.offsetHeight):1;
+      const rect={left:box.left+INSET,top:box.top+INSET,right:box.right-INSET,bottom:box.bottom-INSET,width:Math.max(0,box.width-INSET*2),height:Math.max(0,box.height-INSET*2)};
+      rect.radius=RADIUS*Math.min(sx,sy);
+      const left=Math.max(0,rect.left),top=Math.max(0,rect.top);
+      const visible={left,top,width:Math.max(0,Math.min(innerWidth,rect.right)-left),height:Math.max(0,Math.min(innerHeight,rect.bottom)-top)};
+      return {own,sx,sy,rect,visible};
+    }
     function draw(rect,visible,s,theme){
-      const key=[sourceKey,rect.left,rect.top,rect.width,rect.height,s.opacity,visible.width,visible.height,devicePixelRatio].join('|');
-      if(key===paintKey)return;
+      const edges=edgeKey(rect,visible),key=[sourceKey,edges,s.opacity,devicePixelRatio].join('|');
+      // A hidden edge is redrawn once scrolling stops, so it skips the work while it moves.
+      if(key===paintKey||rimHidden&&paintKey)return;
+      paintEdges=edges;
       const max=Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),gl.getParameter(gl.MAX_VIEWPORT_DIMS)[0],gl.getParameter(gl.MAX_VIEWPORT_DIMS)[1]);
       const dpr=Math.min(devicePixelRatio||1,2,max/visible.width,max/visible.height);
       const width=Math.max(1,Math.round(visible.width*dpr)),height=Math.max(1,Math.round(visible.height*dpr));
@@ -1946,14 +1965,7 @@
       if(disposed)return;
       const s=getSettings();
       if(!s.enabled||s.timelineMode!=='liquid'||!s.background||!target?.isConnected){if(layer)layer.style.display='none';if(gl)release();emit('off');return;}
-      const own=target.getBoundingClientRect(),extra=options.extendTop?.()||0,targetCSS=options.local?getComputedStyle(target):null;
-      const box=extra>0?{left:own.left,right:own.right,width:own.width,top:own.top-extra,bottom:own.bottom,height:own.height+extra}:own;
-      const ratio=(size,layout)=>layout&&Math.abs(size/layout-1)>.01?size/layout:1;
-      const sx=options.local?ratio(own.width,target.offsetWidth):1,sy=options.local?ratio(own.height,target.offsetHeight):1;
-      const rect={left:box.left+INSET,top:box.top+INSET,right:box.right-INSET,bottom:box.bottom-INSET,width:Math.max(0,box.width-INSET*2),height:Math.max(0,box.height-INSET*2)};
-      rect.radius=RADIUS*Math.min(sx,sy);
-      const left=Math.max(0,rect.left),top=Math.max(0,rect.top);
-      const visible={left,top,width:Math.max(0,Math.min(innerWidth,rect.right)-left),height:Math.max(0,Math.min(innerHeight,rect.bottom)-top)};
+      const {own,sx,sy,rect,visible}=measure(),targetCSS=options.local?getComputedStyle(target):null,{left,top}=visible;
       ensureLayer();if(!visible.width||!visible.height){layer.style.display='none';emit('off','not-visible');return;}
       layer.style.display='block';layer.style.left=`${options.local?(left-own.left)/sx-(parseFloat(targetCSS.borderLeftWidth)||0)+target.scrollLeft:left}px`;layer.style.top=`${options.local?(top-own.top)/sy-(parseFloat(targetCSS.borderTopWidth)||0)+target.scrollTop:top}px`;layer.style.width=`${visible.width/sx}px`;layer.style.height=`${visible.height/sy}px`;
       const radius=Math.min(rect.radius??RADIUS,rect.width/2,rect.height/2),upper=rect.top>=0?radius:0,lower=rect.bottom<=innerHeight?radius:0;
@@ -1985,12 +1997,14 @@
     function wake(){const s=getSettings();if(!s.enabled||s.timelineMode!=='liquid'||!s.background)return;activeUntil=performance.now()+200;schedule();}
     function scroll(){
       const s=getSettings();if(!s.enabled||s.timelineMode!=='liquid'||!s.background)return;
-      if(touch.matches||!chromium||level===1){
+      // The lighter tier hides the edge only while it is actually moving; panels that stay put keep it.
+      if((touch.matches||!chromium||level===1)&&(rimHidden||gl&&paintKey&&target?.isConnected&&moved())){
         rimHidden=true;if(canvas)canvas.style.opacity='0';clearTimeout(scrollTimer);
         scrollTimer=setTimeout(()=>{scrollTimer=0;rimHidden=false;paintKey='';render();if(canvas)canvas.style.opacity='1';},140);
       }
       wake();
     }
+    function moved(){const {rect,visible}=measure();return edgeKey(rect,visible)!==paintEdges;}
     function pointer(event){if(event.pointerType==='mouse')wake();}
     function visibility(){lastFrame=0;samples=[];if(document.hidden){cancelAnimationFrame(raf);raf=0;}else schedule();}
     function preference(){paintKey='';render();}
