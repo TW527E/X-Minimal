@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.10.3
+// @version      1.10.4
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -81,6 +81,7 @@
     background: '', backgroundFit: 'cover', backgroundPosition: 'center', backgroundDim: 12,
     timelineMode: 'solid', liquidLite: false, opacity: 78, blur: 20, customCSS: '',
     rememberVideoVolume: true, balanceVideoAudio: true, mediaDownloadEnabled: true,
+    hideNativeCopyLink: false,
     navAlignLeft: false, rightAlignSidebar: false, readingTextTone: 'auto',
     sidebarMode: 'liquid', sidebarOpacity: 42, sidebarBlur: 20, sidebarLite: false, magneticCursor: true
   };
@@ -275,6 +276,7 @@
     ['hideChatDrawer','隱藏右下角聊天浮窗（含按鈕）'],['hideTitleCount','隱藏分頁標題的未讀數'],['systemFont','使用系統字體']
   ]);
   toggles('#posts', [
+    ['hideNativeCopyLink','隱藏分享選單原本的「複製連結」'],
     ['mediaDownloadEnabled','顯示媒體下載按鈕'],['hideAds','隱藏廣告貼文'],['hideSuggestions','隱藏推薦追蹤與主題'],['hideViewCount','隱藏瀏覽次數'],
     ['hideReplyCount','隱藏回覆數'],['hideRepostCount','隱藏轉發數'],['hideLikeCount','隱藏喜歡數'],['hideFollowCount','隱藏追蹤與粉絲數']
   ]);
@@ -550,6 +552,7 @@
     ${ENABLED} [data-xm-generated-nav-label]{margin-inline-start:0;white-space:nowrap;font-size:20px;line-height:24px}
     ${ENABLED} [data-xm-nav] :is(a,button,[role="button"])>:is(span,div):has(>[data-xm-generated-nav-label]){column-gap:20px!important}
     ${ENABLED} [data-xm-timeline-menu]{translate:0 0!important}
+    ${ENABLED}[data-xm-hide-native-copy-link="true"] [data-xm-share-native]{display:none!important}
     ${ENABLED} [data-xm-ui-glass]>[class~="pointer-events-none"][class~="absolute"][class*="backdrop-blur"]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     @media(prefers-reduced-transparency:reduce){${ENABLED} [data-xm-ui-glass][data-xm-glass-renderer="off"]{background:rgb(var(--xm-rgb))!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
     @media(forced-colors:active){${ENABLED} [data-xm-ui-glass]{background:Canvas!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
@@ -722,6 +725,63 @@
   function xPath(element){
     const href=element.getAttribute('href');if(!href)return '';
     try{const url=new URL(href,location.origin);return url.origin===location.origin||['x.com','www.x.com','twitter.com','www.twitter.com'].includes(url.hostname)?url.pathname.replace(/\/+$/,'')||'/':'';}catch{return '';}
+  }
+  function ownsPostContent(article,element){
+    if(element.closest('article')!==article)return false;
+    const quote=element.closest('[data-slot="embedded-tweet-frame"],[data-testid="quoteTweet"]');
+    return !quote||!article.contains(quote);
+  }
+  const SHARE_MENU='[role="menu"],[data-slot="xds-menu-content"]';
+  const COPY_LINK=/^(copy (?:post )?link|copy link to (?:post|tweet)|複製(?:貼文)?連[結接]|复制(?:帖子)?链接|リンクをコピー|ポストのリンクをコピー)$/i;
+  const SHARE_TRIGGER='[data-testid="share"],[data-engagement-action="share"]';
+  let shareCopy=null;
+  function updateShareMenu(){
+    const trigger=settings.enabled?[...document.querySelectorAll('article [aria-expanded="true"][aria-haspopup="menu"]')].find(button=>
+      button.closest(SHARE_TRIGGER)||button.querySelector(SHARE_TRIGGER)||/^(share(?: post| tweet)?|分享(?:貼文|推文|帖子)?|(?:ポスト|ツイート)を共有)$/i.test(button.getAttribute('aria-label')||'')
+    ):null;
+    const article=trigger?.closest('article');
+    const links=article&&ownsPostContent(article,trigger)?[...article.querySelectorAll('a[href*="/status/"]')].filter(link=>ownsPostContent(article,link)):[];
+    const paths=links.map(link=>({link,path:xPath(link)})).filter(({path})=>/^\/(?:[a-z0-9_]+|i\/web)\/status\/\d+$/i.test(path));
+    const path=(paths.find(({link})=>link.querySelector('time'))||paths[0])?.path;
+    const url=path&&`https://fixupx.com${path.replace(/^\/i\/web\//i,'/i/')}`;
+    const controlled=trigger&&document.getElementById(trigger.getAttribute('aria-controls'));
+    const native=url&&[...(controlled||document).querySelectorAll('[role="menuitem"]')].find(item=>{
+      if(item.hasAttribute('data-xm-fixup-copy')||!item.closest(SHARE_MENU)?.getClientRects().length)return false;
+      if(item!==shareCopy?.native&&!item.getClientRects().length)return false;
+      return item.matches('[data-testid="copyLink"]')||COPY_LINK.test(item.getAttribute('aria-label')||'')||COPY_LINK.test(item.textContent.trim());
+    });
+    if(shareCopy&&shareCopy.native===native&&shareCopy.url===url&&shareCopy.row.isConnected)return;
+    if(shareCopy){
+      unmark(shareCopy.native,'share-native');
+      shareCopy.row.remove();
+      shareCopy=null;
+    }
+    if(!native)return;
+    const row=native.cloneNode(true);
+    for(const element of [row,...row.querySelectorAll('[id]')])element.removeAttribute('id');
+    for(const attribute of ['data-testid','href','aria-label','aria-labelledby','data-highlighted'])row.removeAttribute(attribute);
+    row.tabIndex=0;
+    mark(row,'fixup-copy');
+    const label=[...row.querySelectorAll('span,div')].find(element=>!element.childElementCount&&element.textContent.trim()===native.textContent.trim())||row;
+    label.textContent='複製 FixupX 連結';
+    label.setAttribute('aria-live','polite');
+    const copy=async event=>{
+      if(!event.isTrusted)return;
+      event.preventDefault();
+      event.stopPropagation();
+      try{
+        await navigator.clipboard.writeText(url);
+        label.textContent='已複製 FixupX 連結';
+      }catch{
+        label.textContent='複製失敗，點擊重試';
+        unmark(native,'share-native');
+      }
+    };
+    row.addEventListener('click',copy);
+    row.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')copy(event);});
+    native.after(row);
+    mark(native,'share-native');
+    shareCopy={row,native,url};
   }
   function markControl(control,name){
     const dock=control.closest('[data-slot="xds-dock-window"],[data-slot="xds-dock-item"]');
@@ -1119,7 +1179,7 @@
       effect.controller.update(panel?.getClientRects().length?panel:null);
       mark(panel,'rail-renderer',sidebarStates.get(effect.kind)?.renderer||'off');
     }
-    updateInterfaceGlass();magneticCursor?.update();lastRoute=route;
+    updateShareMenu();updateInterfaceGlass();magneticCursor?.update();lastRoute=route;
   }
 
   let themeRGB=[255,255,255];
@@ -1147,10 +1207,13 @@
   }
   // Observe X's changing content, not the attributes this script writes itself.
   new MutationObserver(records=>{
+    if(records.some(record=>record.attributeName==='aria-expanded'&&record.target.matches('article [aria-haspopup="menu"]')))updateShareMenu();
     // Apply popup material in the mutation microtask, before its first paint.
-    if(records.some(record=>record.type==='attributes'?record.target.matches(INTERFACE_GLASS):[...record.addedNodes].some(node=>node instanceof Element&&(node.matches(INTERFACE_GLASS)||node.querySelector(INTERFACE_GLASS)))))updateInterfaceGlass();
+    if(records.some(record=>record.type==='attributes'?record.target.matches(INTERFACE_GLASS):[...record.addedNodes].some(node=>node instanceof Element&&(node.matches(INTERFACE_GLASS)||node.querySelector(INTERFACE_GLASS))))){
+      updateShareMenu();updateInterfaceGlass();
+    }
     schedule(records);
-  }).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-open','hidden','aria-hidden']});
+  }).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-open','hidden','aria-hidden','aria-expanded']});
   new MutationObserver(records=>{
     // X hydration replaces the root attributes after document-end.
     if(root.dataset.xmEnabled!==String(settings.enabled)||root.style.getPropertyValue('--xm-width')!==`${settings.width}px`)apply();
@@ -2344,13 +2407,8 @@
   function createMediaDownloader(getEnabled) {
     const resolver=createMediaResolver();
     const ACTION='[data-xm-download]';
-    function owns(article,element){
-      if(element.closest('article')!==article)return false;
-      const quote=element.closest('[data-slot="embedded-tweet-frame"],[data-testid="quoteTweet"]');
-      return !quote||!article.contains(quote);
-    }
     function postMedia(article){
-      const links=[...article.querySelectorAll('a[href*="/status/"]')].filter(link=>owns(article,link));
+      const links=[...article.querySelectorAll('a[href*="/status/"]')].filter(link=>ownsPostContent(article,link));
       let identity;
       for(const link of links){
         try {
@@ -2363,7 +2421,7 @@
       if(!identity)return null;
       const photos=[],seen=new Set();let hasVideo=false;
       for(const element of article.querySelectorAll('img,video,[data-testid="videoPlayer"]')){
-        if(!owns(article,element))continue;
+        if(!ownsPostContent(article,element))continue;
         if(element.matches('video,[data-testid="videoPlayer"]')){hasVideo=true;continue;}
         try {
           const url=new URL(element.currentSrc||element.src,location.href);
@@ -2450,9 +2508,9 @@
         let button=buttons.find(button=>post&&button.dataset.xmDownload===post.id);
         for(const previous of buttons)if(previous!==button)previous.remove();
         if(!post){button?.remove();continue;}
-        const groups=[...article.querySelectorAll('[role="group"]')].filter(group=>owns(article,group)&&!group.querySelector('[role="slider"]'));
+        const groups=[...article.querySelectorAll('[role="group"]')].filter(group=>ownsPostContent(article,group)&&!group.querySelector('[role="slider"]'));
         const actions=groups.find(group=>group.querySelector('[data-engagement-action],[data-testid="reply"],[data-testid="like"]'))||groups.at(-1);
-        const native=actions&&[...actions.querySelectorAll('button:not([data-xm-download])')].filter(element=>owns(article,element)).at(-1);
+        const native=actions&&[...actions.querySelectorAll('button:not([data-xm-download])')].filter(element=>ownsPostContent(article,element)).at(-1);
         if(button){
           decorate(button,post);
           if(native&&!button.hasAttribute('data-xm-native-action')&&!native.matches(':hover'))button.style.setProperty('--xm-action-muted',getComputedStyle(native.querySelector('svg')||native).color);
