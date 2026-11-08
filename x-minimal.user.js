@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.12.0
+// @version      1.12.1
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -714,6 +714,7 @@
     /* Menus and popovers carry text over arbitrary media, so keep them opaque enough to read (about 4.5:1 over white or black). */
     ${ENABLED} [data-xm-ui-glass][data-xm-ui-floating]{background:rgb(var(--xm-rgb) / max(.8,var(--xm-sidebar-opacity)))!important}
     ${ENABLED} [data-xm-ui-glass]:is([data-xm-glass-renderer="webgl"],[data-xm-glass-renderer="blur"],[data-xm-glass-renderer="solid"]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+    ${ENABLED} [data-xm-ui-glass][data-xm-glass-merged]{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}${ENABLED} [data-xm-glass-merged]>[id^="xm-liquid-ui-"]{display:none!important}
     ${ENABLED} [data-xm-ui-floating]{border-color:transparent!important;border-radius:16px!important}
     ${ENABLED} [data-xm-ui-clear],${ENABLED}[data-xm-image="true"] [data-xm-utility-path]{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     ${ENABLED} [data-xm-generated-nav-label]{margin-inline-start:0;white-space:nowrap;font-size:20px;line-height:24px}
@@ -781,6 +782,14 @@
     ${ENABLED}:is([data-xm-nav-align-left="true"],[data-xm-right-align-sidebar="true"]) [data-xm-shell]{overflow-x:visible!important}
     ${ENABLED} [data-xm-primary] [id^="urt:"]{max-width:100%!important;--x-timeline-max-width:var(--xm-width)}
     ${rules('hide-sidebar','[data-xm-sidebar]')}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar]{display:block!important;position:fixed!important;inset:0 24px auto auto!important;z-index:3!important;width:var(--xm-floating-search-width,350px)!important;min-width:0!important;max-width:none!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;background:none!important;translate:none!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] :not([data-xm-search-box],[data-xm-search-box] *,:has([data-xm-search-box])){display:none!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] :is(:has([data-xm-search-box]),[data-xm-search-box]){width:100%!important;min-width:0!important;max-width:none!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;background:none!important;translate:none!important;overflow:visible!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] :has([data-xm-search-box]){position:static!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] :is(:has([data-xm-search-box]),[data-xm-search-box])::before{display:none!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] [data-xm-search-box]{padding-block:8px!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] [data-xm-search]{width:100%!important;max-width:none!important;margin:0!important}
+    ${ENABLED}[data-xm-floating-search="true"] [data-xm-sidebar] :is([data-xm-search][data-xm-ui-glass] :is([data-xm-search-fill],[data-slot="xds-combobox-input-group"]),[data-xm-search-fill][data-xm-ui-glass]){background-color:transparent!important}
     ${rules('remove-borders','[data-xm-primary]','border-left:0!important;border-right:0!important')}
     ${rules('remove-post-borders','[data-xm-post-divider]','border-block-color:transparent!important')}
     /* X keeps stale virtual-row offsets at zero height; one invisible pixel triggers its native measurement. */
@@ -1355,7 +1364,7 @@
     for(const element of surfaces)if(!nextSurfaces.has(element))unmark(element,'surface');
     for(const element of nextSurfaces)mark(element,'surface');surfaces=nextSurfaces;
     const sidebar=document.querySelector('[data-testid="sidebarColumn"]')||document.querySelector('main + aside');mark(sidebar,'sidebar');
-    for(const previous of document.querySelectorAll('[data-xm-search-host],[data-xm-search-path],[data-xm-search-list],[data-xm-search-spacer]'))for(const name of ['search-host','search-path','search-list','search-spacer'])unmark(previous,name);
+    for(const previous of document.querySelectorAll('[data-xm-search-host],[data-xm-search-path],[data-xm-search-list],[data-xm-search-spacer],[data-xm-search-box]'))for(const name of ['search-host','search-path','search-list','search-spacer','search-box'])unmark(previous,name);
     for(const search of sidebar?.querySelectorAll('form[role="search"],[data-testid="SearchBox_Search_Input"]')||[]){
       const form=search.closest('form')||search;
       for(let parent=form.querySelector('input')?.parentElement;parent&&form.contains(parent);parent=parent.parentElement){
@@ -1373,7 +1382,17 @@
         }
         mark(parent,'search-path');
       }
+      // The sticky box around the field (and its suggestions) is what stays on screen when the sidebar is hidden.
+      // It is found after search-host is marked, since that marker is what keeps the legacy box sticky.
+      let box=null;for(let parent=form.parentElement;parent&&parent!==sidebar;parent=parent.parentElement)if(['fixed','sticky'].includes(getComputedStyle(parent).position)){box=parent;break;}
+      if(!box){box=form;while(box.parentElement&&box.parentElement!==sidebar&&!box.parentElement.hasAttribute('data-xm-sidebar-surface'))box=box.parentElement;}
+      mark(box,'search-box');
     }
+    // A hidden sidebar still leaves its search box in the top-right corner while the timeline leaves room for it.
+    const timelineEdge=document.querySelector('[data-xm-primary]')?.getBoundingClientRect().right||0,searchRoom=timelineEdge?(document.documentElement.clientWidth||innerWidth)-timelineEdge-48:0;
+    const floatingSearch=settings.enabled&&settings.hideSidebar&&!settings.hideSearch&&!!sidebar?.querySelector('[data-xm-search-box]')&&searchRoom>=240;
+    if(root.getAttribute('data-xm-floating-search')!==String(floatingSearch))root.setAttribute('data-xm-floating-search',String(floatingSearch));
+    const searchWidth=`${Math.round(Math.min(350,searchRoom))}px`;if(floatingSearch&&root.style.getPropertyValue('--xm-floating-search-width')!==searchWidth)root.style.setProperty('--xm-floating-search-width',searchWidth);
     for(const previous of document.querySelectorAll('[data-xm-premium-upsell]'))unmark(previous,'premium-upsell');
     for(const item of sidebar?.querySelectorAll('h2,h3,aside[role="complementary"][aria-label],a[href]')||[]){
       if(!(/premium/i.test(item.getAttribute('aria-label')||item.matches('h2,h3')&&item.textContent||'')||/^\/i\/premium(?:_|\/|$)/.test(xPath(item))))continue;
@@ -1455,7 +1474,8 @@
     updateReadingTheme(primary);scanVideos();mediaDownloader?.update();liquid?.update(primary);
     for(const effect of sidebarLiquids){
       const panel=document.querySelector(effect.selector);
-      effect.controller.update(panel?.getClientRects().length?panel:null);
+      // With only the floating search left of the sidebar, the search box draws its own glass instead of the panel.
+      effect.controller.update(panel?.getClientRects().length&&!(effect.kind==='right'&&root.getAttribute('data-xm-floating-search')==='true')?panel:null);
       mark(panel,'rail-renderer',sidebarStates.get(effect.kind)?.renderer||'off');
     }
     updateShareMenu();updateInterfaceGlass();magneticCursor?.update();lastRoute=route;
@@ -1926,15 +1946,16 @@
       if(disposed)return;
       const s=getSettings();
       if(!s.enabled||s.timelineMode!=='liquid'||!s.background||!target?.isConnected){if(layer)layer.style.display='none';if(gl)release();emit('off');return;}
-      const box=target.getBoundingClientRect(),targetCSS=options.local?getComputedStyle(target):null;
+      const own=target.getBoundingClientRect(),extra=options.extendTop?.()||0,targetCSS=options.local?getComputedStyle(target):null;
+      const box=extra>0?{left:own.left,right:own.right,width:own.width,top:own.top-extra,bottom:own.bottom,height:own.height+extra}:own;
       const ratio=(size,layout)=>layout&&Math.abs(size/layout-1)>.01?size/layout:1;
-      const sx=options.local?ratio(box.width,target.offsetWidth):1,sy=options.local?ratio(box.height,target.offsetHeight):1;
+      const sx=options.local?ratio(own.width,target.offsetWidth):1,sy=options.local?ratio(own.height,target.offsetHeight):1;
       const rect={left:box.left+INSET,top:box.top+INSET,right:box.right-INSET,bottom:box.bottom-INSET,width:Math.max(0,box.width-INSET*2),height:Math.max(0,box.height-INSET*2)};
       rect.radius=RADIUS*Math.min(sx,sy);
       const left=Math.max(0,rect.left),top=Math.max(0,rect.top);
       const visible={left,top,width:Math.max(0,Math.min(innerWidth,rect.right)-left),height:Math.max(0,Math.min(innerHeight,rect.bottom)-top)};
       ensureLayer();if(!visible.width||!visible.height){layer.style.display='none';emit('off','not-visible');return;}
-      layer.style.display='block';layer.style.left=`${options.local?(left-box.left)/sx-(parseFloat(targetCSS.borderLeftWidth)||0)+target.scrollLeft:left}px`;layer.style.top=`${options.local?(top-box.top)/sy-(parseFloat(targetCSS.borderTopWidth)||0)+target.scrollTop:top}px`;layer.style.width=`${visible.width/sx}px`;layer.style.height=`${visible.height/sy}px`;
+      layer.style.display='block';layer.style.left=`${options.local?(left-own.left)/sx-(parseFloat(targetCSS.borderLeftWidth)||0)+target.scrollLeft:left}px`;layer.style.top=`${options.local?(top-own.top)/sy-(parseFloat(targetCSS.borderTopWidth)||0)+target.scrollTop:top}px`;layer.style.width=`${visible.width/sx}px`;layer.style.height=`${visible.height/sy}px`;
       const radius=Math.min(rect.radius??RADIUS,rect.width/2,rect.height/2),upper=rect.top>=0?radius:0,lower=rect.bottom<=innerHeight?radius:0;
       layer.style.borderRadius=`${upper/sx}px ${upper/sx}px ${lower/sx}px ${lower/sx}px`;
       const theme=getThemeRGB(),supported=canBlur(),solid=reduce.matches||contrast.matches||!supported;
@@ -3073,21 +3094,31 @@
     }
   }
   function updateInterfaceGlass(){
-    const candidates=[...document.querySelectorAll(INTERFACE_GLASS),...chatRoot?.querySelectorAll(INTERFACE_GLASS)||[],dialog].map(element=>{
+    // The search box left behind by a hidden sidebar floats on the page; with 透明搜尋列 it carries its own pane.
+    const floatingSearch=settings.transparentSearch&&root.getAttribute('data-xm-floating-search')==='true'?[...document.querySelectorAll('[data-xm-sidebar] [data-xm-search]')].map(search=>parseFloat(getComputedStyle(search).borderRadius)>=8?search:search.querySelector('[data-xm-search-fill]')||search):[];
+    const candidates=[...document.querySelectorAll(INTERFACE_GLASS),...chatRoot?.querySelectorAll(INTERFACE_GLASS)||[],...floatingSearch,dialog].map(element=>{
       if(element!==dialog&&!element.matches('[data-testid="HoverCard"],[data-slot],[data-rootownerid],[role="dialog"],[role="menu"],[role="tooltip"]'))return element;
       return [element,...element.querySelectorAll('div')].find(e=>{const c=getComputedStyle(e),r=e.getBoundingClientRect();return (e.hasAttribute('data-xm-ui-glass')||parseFloat(c.borderRadius)>=8&&c.backgroundColor!=='rgba(0, 0, 0, 0)')&&r.width>=160&&r.height>=32;})||element;
     });
     const visible=settings.enabled&&settings.sidebarMode!=='solid'?candidates.filter(e=>{
-      if(!e.isConnected||!e.getClientRects().length||e.closest('[data-xm-nav-panel],[data-xm-sidebar-surface],article')||e.closest('[data-xm-composer]')&&!e.hasAttribute('data-xm-composer'))return false;
+      if(!e.isConnected||!e.getClientRects().length||!floatingSearch.includes(e)&&e.closest('[data-xm-nav-panel],[data-xm-sidebar-surface],article')||e.closest('[data-xm-composer]')&&!e.hasAttribute('data-xm-composer'))return false;
       const b=e.getBoundingClientRect();return b.width>0&&b.height>0&&b.right>0&&b.left<innerWidth&&b.bottom>0&&b.top<innerHeight;
     }):[];
     const targets=new Set(visible.filter((e,i)=>visible.indexOf(e)===i&&!visible.some(parent=>parent!==e&&!parent.hasAttribute('data-xm-page-glass')&&parent.contains(e))));
     for(const [element,record] of interfaceGlass)if(!targets.has(element)){
-      record.controller.dispose();unmark(element,'ui-glass');unmark(element,'glass-renderer');unmark(element,'timeline-menu');unmark(element,'ui-floating');interfaceGlass.delete(element);
+      record.controller.dispose();unmark(element,'ui-glass');unmark(element,'glass-renderer');unmark(element,'timeline-menu');unmark(element,'ui-floating');unmark(element,'glass-merged');interfaceGlass.delete(element);
     }
+    // Stacked sticky headers (Explore's search row over its tabs) share one pane: the lower one's glass reaches up behind the upper one.
+    const headers=[...targets].filter(e=>e.hasAttribute('data-xm-header')),boxes=new Map(headers.map(e=>[e,e.getBoundingClientRect()])),covers=new Map();
+    for(const lower of headers)for(const upper of headers){
+      const a=boxes.get(upper),b=boxes.get(lower);
+      if(upper!==lower&&Math.abs(a.bottom-b.top)<=1.5&&Math.abs(a.left-b.left)<=1.5&&Math.abs(a.right-b.right)<=1.5&&(parseInt(getComputedStyle(upper).zIndex)||0)>(parseInt(getComputedStyle(lower).zIndex)||0))covers.set(lower,upper);
+    }
+    const merged=new Set(covers.values());
     const nextPaints=new Set();
     for(const element of targets){
       mark(element,'ui-glass');
+      if(merged.has(element))mark(element,'glass-merged');else unmark(element,'glass-merged');
       if(element.matches('[data-xm-composer],[data-xm-header],[data-xm-home-tabs],[data-xm-page-glass],[role="tablist"]')){
         for(const child of element.querySelectorAll('div,header')){
           if(child.id.startsWith('xm-liquid')||child.closest('[data-xm-ui-glass]')!==element||!isReadingSurface(child))continue;
@@ -3101,12 +3132,16 @@
       if(owner?.matches('[data-pinned-timeline]'))mark(element,'timeline-menu');else unmark(element,'timeline-menu');
       let record=interfaceGlass.get(element);
       if(!record){
-        record={state:null,controller:null};interfaceGlass.set(element,record);
+        record={state:null,controller:null,above:null};interfaceGlass.set(element,record);
         const radius=parseFloat(getComputedStyle(element).borderTopLeftRadius)||0;
         record.controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,opacity:element===dialog?Math.max(92,settings.sidebarOpacity):floating?Math.max(80,settings.sidebarOpacity):settings.sidebarOpacity,blur:floating?Math.max(12,settings.sidebarBlur):settings.sidebarBlur}),()=>navImage,()=>themeRGB,state=>{
           record.state=state;mark(element,'glass-renderer',state.renderer);syncSidebarLiquidUI();
-        },{id:`xm-liquid-ui-${++interfaceGlassId}`,performanceKey:'x-minimal-ui-liquid-performance',inset:0,radius,local:true,zIndex:-1,compactEdges:true,highlight:!element.hasAttribute('data-xm-composer')});
+        },{id:`xm-liquid-ui-${++interfaceGlassId}`,performanceKey:'x-minimal-ui-liquid-performance',inset:0,radius,local:true,zIndex:-1,compactEdges:true,highlight:!element.hasAttribute('data-xm-composer'),extendTop:()=>{
+          const upper=record.above;if(!upper?.isConnected)return 0;
+          const a=upper.getBoundingClientRect(),b=element.getBoundingClientRect();return Math.abs(a.bottom-b.top)<=1.5?b.top-a.top:0;
+        }});
       }
+      record.above=covers.get(element)||null;
       record.controller.update(element);
     }
     for(const element of interfacePaints)if(!nextPaints.has(element))unmark(element,'ui-clear');
