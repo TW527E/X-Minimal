@@ -48,10 +48,16 @@ function doPost(event) {
       if (id) properties.setProperty('syncFileId', id);
     }
     const fileUrl = id ? '/' + encodeURIComponent(id) : '';
+    // The stored revision answers unchanged reads without downloading the whole sync file.
+    const knownRevision = Number(properties.getProperty('syncRevision'));
+    if (request.action === 'read' && id && Number.isSafeInteger(request.revision) && request.revision > 0 && request.revision === knownRevision) {
+      return reply({ok: true, revision: knownRevision, unchanged: true});
+    }
     const current = id ? driveRequest_(DRIVE_FILES + fileUrl + '?alt=media') : {revision: 0, data: null};
     if (!Number.isSafeInteger(current.revision) || current.revision < 0 || (id && !validSyncData_(current.data))) {
       return reply({error: 'storage'});
     }
+    if (id && current.revision !== knownRevision) properties.setProperty('syncRevision', String(current.revision));
     if (request.action === 'read') {
       if (id && request.revision === current.revision) return reply({ok: true, revision: current.revision, unchanged: true});
       return reply({ok: true, ...current});
@@ -73,6 +79,7 @@ function doPost(event) {
     }
     const saved = driveRequest_(location, 'put', content);
     if (!id) properties.setProperty('syncFileId', saved.id);
+    properties.setProperty('syncRevision', String(revision));
     return reply({ok: true, revision});
   } catch {
     return reply({error: 'storage'});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.10.4
+// @version      1.11.0
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -17,6 +17,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
+// @connect      cdn.syndication.twimg.com
 // @sandbox      DOM
 // @run-at       document-end
 // @noframes
@@ -30,11 +31,17 @@
   const KEY = 'x-minimal-settings';
   const AUDIO_KEY = 'x-minimal-video-volume';
   const DOWNLOAD_KEY = 'x-minimal-download-history';
+  const DOWNLOAD_DELETED_KEY = 'x-minimal-download-deleted';
   const SYNC_CONFIG_KEY = 'x-minimal-sync-config';
   const SYNC_META_KEY = 'x-minimal-sync-meta';
   const MAX_BACKUP = 32 * 1024 * 1024;
-  let downloadHistory=Object.create(null),syncController=null;
-  try{downloadHistory=normalizeDownloadHistory(GM_getValue(DOWNLOAD_KEY,{}));}catch{}
+  let downloadHistory=Object.create(null),downloadDeleted=Object.create(null),syncController=null;
+  try{downloadDeleted=normalizeDownloadDeleted(GM_getValue(DOWNLOAD_DELETED_KEY,{}));}catch{}
+  try{
+    const stored=normalizeDownloadHistory(GM_getValue(DOWNLOAD_KEY,{}));
+    downloadHistory=pruneDownloadHistory(stored,downloadDeleted);
+    if(Object.keys(stored).length!==Object.keys(downloadHistory).length)GM_setValue(DOWNLOAD_KEY,downloadHistory);
+  }catch{}
   const INTERFACE_GLASS = '[data-xm-composer],[data-xm-page-glass],[data-xm-header],[data-xm-home-tabs],[role="tablist"]:has([role="tab"]),[data-slot="xds-menu-content"],[data-slot="xds-popover-content"],[data-slot="xds-hover-card-content"],[data-slot="xds-hovercard-content"],[data-testid="HoverCard"],[data-base-ui-focusable][data-open][data-side],[data-rootownerid][data-open]:not(button):not([role="tab"]),[role="tooltip"]:has(img),[role="menu"],[role="dialog"]';
   const MAX_IMAGE = 6 * 1024 * 1024;
   const NAV = [
@@ -81,9 +88,9 @@
     background: '', backgroundFit: 'cover', backgroundPosition: 'center', backgroundDim: 12,
     timelineMode: 'solid', liquidLite: false, opacity: 78, blur: 20, customCSS: '',
     rememberVideoVolume: true, balanceVideoAudio: true, mediaDownloadEnabled: true,
-    hideNativeCopyLink: false,
+    fixupCopy: true, hideNativeCopyLink: false,
     navAlignLeft: false, rightAlignSidebar: false, readingTextTone: 'auto',
-    sidebarMode: 'liquid', sidebarOpacity: 42, sidebarBlur: 20, sidebarLite: false, magneticCursor: true
+    sidebarMode: 'liquid', sidebarOpacity: 42, sidebarBlur: 20, sidebarLite: false, magneticCursor: false
   };
 
   function imageValue(value) {
@@ -153,10 +160,12 @@
       :host([data-placement=nav]) #launcher{color:var(--xm-nav-text,var(--xm-text));border-radius:12px}:host([data-placement=nav]) #launcher:hover{background:var(--xm-nav-hover,var(--xm-hover))}
       :host([data-placement=nav][data-labels=hidden]) #launcher-label,:host([data-placement=nav][data-labels=hover]:not([data-nav-expanded])) #launcher-label{display:none}
       :host([data-placement=nav]) #launcher{height:48px;min-height:48px;padding:12px 24px;gap:20px}:host([data-placement=nav][data-labels=hidden]) #launcher,:host([data-placement=nav][data-labels=hover]:not([data-nav-expanded])) #launcher{width:48px;max-width:48px;margin-inline:12px;justify-content:center;padding:12px}
+      :host([data-placement=tabbar]){display:flex;flex:1 1 0;min-width:0;align-items:center;justify-content:center}
+      :host([data-placement=tabbar]) #launcher{width:48px;height:48px;min-height:48px;padding:12px;justify-content:center;border-radius:999px}:host([data-placement=tabbar]) #launcher-label{display:none}
       :host([data-placement=fallback]) #launcher{position:fixed;left:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:9999;background:var(--xm-panel,#fff);border:1px solid var(--xm-line,#ddd)}
       dialog{width:min(900px,calc(100vw - 32px));max-height:90dvh;margin:auto;padding:0;border:1px solid var(--xm-line,#ddd);border-radius:16px;background:var(--xm-panel,#fff);color:var(--xm-text,#111);overscroll-behavior:contain}dialog[open]{display:flex;flex-direction:column;overflow:hidden}
       dialog::backdrop{background:rgb(0 0 0 / .45)}header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:24px 28px 20px;background:var(--xm-panel);border-bottom:1px solid var(--xm-line)}
-      dialog[data-xm-ui-glass]{isolation:isolate;background:rgb(var(--xm-rgb) / var(--xm-sidebar-opacity));backdrop-filter:blur(var(--xm-sidebar-blur))}
+      dialog[data-xm-ui-glass]{isolation:isolate;background:rgb(var(--xm-rgb) / max(.92,var(--xm-sidebar-opacity)));backdrop-filter:blur(var(--xm-sidebar-blur))}
       dialog[data-xm-ui-glass]:not([data-xm-glass-renderer="off"]){background:transparent;backdrop-filter:none}
       dialog[data-xm-ui-floating]{border-color:transparent}
       dialog[data-xm-ui-glass]>header,dialog[data-xm-ui-glass]>footer{background:transparent}
@@ -186,8 +195,15 @@
       .nav-choice:has(input:checked){color:var(--xm-text)}.nav-choice:has(input:checked) .nav-icon{border-color:var(--x-fg-brand,#1d9bf0)}.nav-choice:hover .nav-icon{background:var(--xm-hover)}.nav-choice:has(input:focus-visible) .nav-icon{outline:2px solid var(--xm-text);outline-offset:3px}
       #preview{min-height:108px;border-radius:8px;border:1px solid var(--xm-line);background-size:cover;background-position:center;background-blend-mode:multiply;display:grid;place-items:center;overflow:hidden}
       #preview article{width:65%;margin:12px;padding:16px;border-radius:6px;color:var(--xm-text);background:var(--xm-panel)}#preview strong{font-weight:600}#preview p{margin:4px 0 0;font-size:13px}
+      #toc{display:flex;gap:6px;padding:10px 28px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--xm-line);flex-shrink:0}#toc::-webkit-scrollbar{display:none}
+      #toc button{flex:none;min-height:30px;padding:4px 12px;border:1px solid var(--xm-line);border-radius:999px;background:transparent;font-size:13px;color:var(--xm-muted)}#toc button:hover{color:var(--xm-text);border-color:var(--xm-muted)}#toc button[aria-current=true]{background:var(--xm-text);border-color:var(--xm-text);color:var(--xm-panel)}
+      dialog[data-xm-ui-glass]>#toc{background:transparent}
+      #toc[data-more-end]{mask-image:linear-gradient(90deg,#000 calc(100% - 32px),transparent)}#toc[data-more-start]{mask-image:linear-gradient(90deg,transparent,#000 32px)}#toc[data-more-start][data-more-end]{mask-image:linear-gradient(90deg,transparent,#000 32px,#000 calc(100% - 32px),transparent)}
+      input[type=text],input[type=password]{width:100%;min-height:40px;padding:8px 10px;border:1px solid var(--xm-line);border-radius:8px;background:var(--xm-panel);color:inherit}
+      #css-pending{padding:12px;border:1px solid var(--xm-error,#c93030);border-radius:8px}#css-pending pre{max-height:200px;overflow:auto;margin:8px 0 0;padding:8px;border-radius:6px;background:var(--xm-hover);font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+      #download-history .history-remove{align-self:flex-start;padding:2px 0;border:0;background:none;font-size:12px;color:var(--xm-muted);text-decoration:underline;text-underline-offset:2px}#download-history .history-remove:hover{color:var(--xm-text)}
       footer{padding:18px 28px 24px;display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap;border-top:1px solid var(--xm-line)}#status{margin:0;min-height:20px;font-size:13px;color:var(--xm-muted)}[hidden]{display:none!important}
-      @media(max-width:640px){dialog{width:calc(100vw - 16px);max-height:94dvh}header{padding:20px}form{padding:0 20px}section{grid-template-columns:1fr;gap:16px;padding:20px 0}footer{padding:18px 20px}#nav-options{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 8px}}
+      @media(max-width:640px){dialog{width:calc(100vw - 16px);max-height:94dvh}header{padding:20px}#toc{padding:8px 20px}form{padding:0 20px}section{grid-template-columns:1fr;gap:16px;padding:20px 0}footer{padding:18px 20px}#nav-options{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 8px}}
       @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
     </style>
     <button id="launcher" type="button" aria-label="X 極簡設定" title="X 極簡設定">
@@ -195,8 +211,9 @@
     </button>
     <dialog aria-labelledby="xm-title">
       <header><div><h1 id="xm-title">X 極簡</h1><p>介面、背景與閱讀空間</p></div><button id="close" type="button" aria-label="關閉設定">×</button></header>
+      <nav id="toc" aria-label="設定分類"></nav>
       <form method="dialog">
-        <section><div><h2>背景與時間線</h2><p class="description">背景留在頁面兩側；中間可保留實色，或透出柔和的背景圖片。</p></div><div class="fields" id="appearance">
+        <section data-toc="背景"><div><h2>背景與時間線</h2><p class="description">背景留在頁面兩側；中間可保留實色，或透出柔和的背景圖片。</p></div><div class="fields" id="appearance">
           <label class="row"><span>啟用 X 極簡</span><input type="checkbox" data-key="enabled"></label>
           <div id="preview" aria-label="時間線背景預覽"><article><strong>你的時間線</strong><p>保留清晰文字與原始媒體。</p></article></div>
           <label class="field">時間線背景<select data-key="timelineMode"><option value="solid">保留實色背景</option><option value="glass">高斯模糊／毛玻璃</option><option value="liquid">Liquid Glass（同款折射）</option></select></label>
@@ -213,7 +230,7 @@
           <label class="field">背景壓暗<div class="range"><input type="range" data-key="backgroundDim" min="0" max="80" step="1"><output></output></div></label>
           <label class="field">時間線寬度<div class="range"><input type="range" data-key="width" min="480" max="1100" step="10"><output></output></div></label>
         </div></section>
-        <section><div><h2>顯示效果</h2><p class="description">導覽、分頁與浮窗獨立於時間線，使用同款 Liquid Glass 折射。游標會吸附連結與按鈕，移到文字時切換為文字光標。</p></div><div class="fields" id="effects">
+        <section data-toc="效果"><div><h2>顯示效果</h2><p class="description">導覽、分頁與浮窗獨立於時間線，使用同款 Liquid Glass 折射。游標會吸附連結與按鈕，移到文字時切換為文字光標。</p></div><div class="fields" id="effects">
           <label class="field">側欄、分頁與浮窗背景<select data-key="sidebarMode"><option value="liquid">Liquid Glass（同款折射）</option><option value="glass">高斯模糊／毛玻璃</option><option value="solid">實色背景</option></select></label>
           <div class="fields" id="sidebar-liquid-options"><label class="row"><span>介面輕量模式（停用折射）</span><input type="checkbox" data-key="sidebarLite" aria-describedby="sidebar-liquid-state"></label><p class="note" id="sidebar-liquid-state" role="status"></p></div>
           <label class="field">介面不透明度<div class="range"><input type="range" data-key="sidebarOpacity" min="15" max="100" step="1"><output></output></div></label>
@@ -221,31 +238,37 @@
           <label class="row"><span>磁吸與文字游標</span><input type="checkbox" data-key="magneticCursor"></label>
           <p class="note">觸控裝置或系統要求減少動態效果時，保留原生游標。</p>
         </div></section>
-        <section><div><h2>閱讀介面</h2><p class="description">新舊版自動辨識。時間線置中會在空間足夠時對齊視窗中央；窄視窗優先保留閱讀寬度。</p></div><div class="fields" id="reading"><label class="field">透明時間線的文字配色<select data-key="readingTextTone"><option value="auto">依背景自動調整</option><option value="light">淺色文字</option><option value="dark">深色文字</option></select></label></div></section>
-        <section><div><h2>貼文與計數</h2><p class="description">隱藏數字時，保留按讚、回覆與轉發操作。</p></div><div class="fields" id="posts"></div></section>
-        <section><div><h2>媒體下載紀錄</h2><p class="description">成功下載後保留紀錄。一般點擊略過已下載的媒體；按住 Shift 再點可重新下載全部。</p></div><div class="fields"><p class="note" id="download-summary" role="status"></p><ol id="download-history"></ol><button type="button" class="action" id="history-more" hidden>顯示更多</button></div></section>
-        <section id="audio-section"><div><h2>影片音量</h2><p class="description">沿用你的音量曲線與平衡算法。首頁自動播放保留 X 的靜音設定。</p></div><div class="fields">
+        <section data-toc="版面"><div><h2>版面與行為</h2><p class="description">新舊版自動辨識。時間線置中會在空間足夠時對齊視窗中央；窄視窗優先保留閱讀寬度。</p></div><div class="fields" id="reading"><label class="field">透明時間線的文字配色<select data-key="readingTextTone"><option value="auto">依背景自動調整</option><option value="light">淺色文字</option><option value="dark">深色文字</option></select></label></div></section>
+        <section data-toc="隱藏"><div><h2>隱藏介面元素</h2><p class="description">移除廣告、推薦和不常用的入口。關閉開關即恢復 X 原本的顯示。</p></div><div class="fields" id="hiding"></div></section>
+        <section data-toc="計數"><div><h2>貼文計數</h2><p class="description">隱藏數字時，保留按讚、回覆與轉發操作。</p></div><div class="fields" id="posts"></div></section>
+        <section data-toc="下載與分享"><div><h2>媒體下載與分享</h2><p class="description">成功下載後保留紀錄。一般點擊略過已下載的媒體；按住 Shift 再點可重新下載全部。</p></div><div class="fields" id="media"><p class="note" id="download-summary" role="status"></p><ol id="download-history"></ol><div class="buttons"><button type="button" class="action" id="history-more" hidden>顯示更多</button><button type="button" class="action" id="history-clear" hidden>清空下載紀錄</button></div></div></section>
+        <section id="audio-section" data-toc="音量"><div><h2>影片音量</h2><p class="description">沿用你的音量曲線與平衡算法。首頁自動播放保留 X 的靜音設定。</p></div><div class="fields">
           <label class="row"><span>記憶影片音量</span><input type="checkbox" data-key="rememberVideoVolume"></label>
           <label class="field">記憶音量<div class="range"><input id="video-volume" type="range" min="0" max="100" step="0.1"><output></output></div></label>
           <label class="row"><span>音量平衡（減少影片間大小聲差異）</span><input type="checkbox" data-key="balanceVideoAudio"></label>
           <p class="note" id="audio-state" role="status">播放影片後啟用音量平衡。</p>
           <p class="note">播放器調整的音量會套用到後續影片，並存進 Tampermonkey。滑桿採三次方曲線，低音量更容易微調；50% 對應 12.5% 原始增益。音訊在本機處理。</p>
         </div></section>
-        <section><div><h2>側邊導覽</h2><p class="description">點圖示切換顯示。藍色外圈表示顯示，灰色表示隱藏。設定入口會一直保留。</p></div><div class="fields">
+        <section data-toc="導覽"><div><h2>側邊導覽</h2><p class="description">點圖示切換顯示。藍色外圈表示顯示，灰色表示隱藏。設定入口會一直保留。</p></div><div class="fields">
           <div id="nav-options" role="group" aria-label="顯示於側邊導覽的項目"></div>
           <label class="field">導覽文字<select data-key="navLabels"><option value="always">持續顯示</option><option value="hover">停留後展開／鍵盤聚焦時顯示</option><option value="hidden">只顯示圖示</option></select></label>
-          <div id="navigation"></div>
+          <div class="fields" id="navigation"></div>
         </div></section>
-        <section><div><h2>跨裝置同步</h2><p class="description">同步外觀、背景、音量與下載紀錄。Google Drive 使用配套 Apps Script；WebDAV 使用既有的同步檔案網址。連線密鑰只保存在此裝置。</p></div><div class="fields">
+        <section data-toc="同步"><div><h2>跨裝置同步</h2><p class="description">同步外觀、背景、音量與下載紀錄。Google Drive 使用配套 Apps Script；WebDAV 使用既有的同步檔案網址。連線密鑰只保存在此裝置。</p></div><div class="fields">
           <label class="field">同步服務<select id="sync-provider"><option value="drive">Google Drive</option><option value="webdav">WebDAV</option></select></label>
           <p class="note" id="sync-connection"></p>
-          <div class="buttons"><button type="button" class="action" id="sync-configure">設定連線與憑證</button><button type="button" class="action" id="sync-now">立即同步</button></div>
+          <label class="field"><span id="sync-url-label">Apps Script 的 /exec 網址</span><input type="url" id="sync-url" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
+          <label class="field" data-sync-provider="drive">同步密鑰<input type="password" id="sync-key" autocomplete="off" spellcheck="false"></label>
+          <label class="field" data-sync-provider="webdav">使用者名稱<input type="text" id="sync-user" autocomplete="off" spellcheck="false"></label>
+          <label class="field" data-sync-provider="webdav">應用程式密碼<input type="password" id="sync-password" autocomplete="new-password" spellcheck="false"></label>
+          <div class="buttons"><button type="button" class="action" id="sync-save">儲存連線</button><button type="button" class="action" id="sync-test">測試連線</button><button type="button" class="action" id="sync-now">立即同步</button></div>
           <label class="row"><span>自動同步（開頁、變更後與每分鐘）</span><input type="checkbox" id="sync-auto"></label>
-          <p class="note" id="sync-state" role="status"></p>
-          <p class="note">啟用後會將上述資料傳送至你設定的服務；X 分頁關閉時停止同步。修改連線或切換服務會先關閉自動同步。</p>
+          <p class="note" id="sync-state" role="status" aria-live="polite"></p>
+          <p class="note">啟用後會將上述資料傳送至你設定的服務；X 分頁關閉時停止同步。修改連線或切換服務會先關閉自動同步。來自其他裝置的自訂 CSS 需要你確認後才會套用。</p>
         </div></section>
-        <section><div><h2>進階與備份</h2><p class="description">匯出後可在 macOS 匯入，包含本機背景圖。</p></div><div class="fields">
+        <section data-toc="進階"><div><h2>進階與備份</h2><p class="description">匯出後可在 macOS 匯入，包含本機背景圖。</p></div><div class="fields">
           <label class="field">自訂 CSS<textarea data-key="customCSS" spellcheck="false" aria-label="自訂 CSS"></textarea></label>
+          <div class="fields" id="css-pending" hidden><p class="note" id="css-pending-state" role="status"></p><details><summary>查看雲端的自訂 CSS</summary><pre id="css-pending-text"></pre></details><div class="buttons"><button type="button" class="action" id="css-accept">套用雲端 CSS</button><button type="button" class="action" id="css-keep">保留本機 CSS</button></div></div>
           <div class="buttons"><button class="action" type="button" id="export">匯出設定</button><button class="action" type="button" id="import">匯入設定</button><button class="action" type="button" id="reset">恢復預設</button></div>
           <input type="file" id="import-file" accept="application/json,.json" hidden>
         </div></section>
@@ -255,7 +278,8 @@
 
   const dialog = shadow.querySelector('dialog');
   const $ = selector => shadow.querySelector(selector);
-  function toggles(target, entries) {
+  function toggles(target, entries, prepend=false) {
+    const rows=[];
     for (const [key, title] of entries) {
       const label = document.createElement('label');
       label.className = 'row';
@@ -263,23 +287,28 @@
       text.textContent = title;
       const input = document.createElement('input');
       input.type = 'checkbox'; input.dataset.key = key;
-      label.append(text, input); $(target).append(label);
+      label.append(text, input); rows.push(label);
     }
+    if(prepend)$(target).prepend(...rows);else $(target).append(...rows);
   }
   toggles('#reading', [
-    ['centerTimeline','時間線水平置中'],['navAlignLeft','左側導覽靠齊視窗左緣'],['rightAlignSidebar','右側推薦欄靠齊視窗右緣'],['hideSidebar','隱藏右側趨勢與推薦欄'],['hidePremiumUpsell','隱藏 Subscribe to Premium'],['removeBorders','隱藏時間線兩側框線'],
-    ['removePostBorders','隱藏貼文分隔線'],['stickyHeader','固定頂部標頭'],
-    ['hideTopTabs','隱藏首頁時間線分頁'],['defaultFollowing','進入首頁時選擇「正在跟隨」'],
-    ['hideComposer','隱藏首頁發文框'],['zen','專注寫作模式（僅保留發文框）'],
-    ['hideSearch','隱藏右欄搜尋列'],['transparentSearch','透明搜尋列'],
+    ['centerTimeline','時間線水平置中'],['navAlignLeft','左側導覽靠齊視窗左緣'],['rightAlignSidebar','右側推薦欄靠齊視窗右緣'],
+    ['removeBorders','隱藏時間線兩側框線'],['removePostBorders','隱藏貼文分隔線'],['stickyHeader','固定頂部標頭'],
+    ['transparentSearch','透明搜尋列'],['systemFont','使用系統字體'],
+    ['defaultFollowing','進入首頁時選擇「正在跟隨」'],['zen','專注寫作模式（僅保留發文框）']
+  ]);
+  toggles('#hiding', [
+    ['hideAds','隱藏廣告貼文'],['hideSuggestions','隱藏推薦追蹤與主題'],['hideSidebar','隱藏右側趨勢與推薦欄'],['hidePremiumUpsell','隱藏 Subscribe to Premium'],
+    ['hideTopTabs','隱藏首頁時間線分頁'],['hideComposer','隱藏首頁發文框'],['hideSearch','隱藏右欄搜尋列'],
     ['hidePostButton','隱藏側邊發文按鈕'],['hideGrok','隱藏 Grok 浮窗與貼文 AI 按鈕'],
-    ['hideChatDrawer','隱藏右下角聊天浮窗（含按鈕）'],['hideTitleCount','隱藏分頁標題的未讀數'],['systemFont','使用系統字體']
+    ['hideChatDrawer','隱藏右下角聊天浮窗（含按鈕）'],['hideTitleCount','隱藏分頁標題的未讀數']
   ]);
   toggles('#posts', [
-    ['hideNativeCopyLink','隱藏分享選單原本的「複製連結」'],
-    ['mediaDownloadEnabled','顯示媒體下載按鈕'],['hideAds','隱藏廣告貼文'],['hideSuggestions','隱藏推薦追蹤與主題'],['hideViewCount','隱藏瀏覽次數'],
-    ['hideReplyCount','隱藏回覆數'],['hideRepostCount','隱藏轉發數'],['hideLikeCount','隱藏喜歡數'],['hideFollowCount','隱藏追蹤與粉絲數']
+    ['hideViewCount','隱藏瀏覽次數'],['hideReplyCount','隱藏回覆數'],['hideRepostCount','隱藏轉發數'],['hideLikeCount','隱藏喜歡數'],['hideFollowCount','隱藏追蹤與粉絲數']
   ]);
+  toggles('#media', [
+    ['mediaDownloadEnabled','在貼文操作列顯示媒體下載按鈕'],['fixupCopy','分享選單加入「複製 FixupX 連結」'],['hideNativeCopyLink','隱藏分享選單原本的「複製連結」']
+  ],true);
   toggles('#navigation', [['centerNav','垂直置中導覽'],['hideLogo','隱藏 X 標誌'],['hideUnread','隱藏導覽未讀徽章']]);
   for (const [key, title] of NAV) {
     const label = document.createElement('label'); label.className = 'nav-choice';
@@ -290,6 +319,38 @@
     icon.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[key]}</svg>`;
     label.append(input,icon,text); $('#nav-options').append(label);
   }
+  const tocSections=[...shadow.querySelectorAll('section[data-toc]')];
+  const tocButtons=tocSections.map((section,index)=>{
+    const button=document.createElement('button');button.type='button';button.textContent=section.dataset.toc;
+    const heading=section.querySelector('h2');heading.id=`xm-section-${index}`;button.setAttribute('aria-controls',heading.id);
+    button.addEventListener('click',()=>{section.scrollIntoView({block:'start',behavior:matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});setTocCurrent(index);});
+    $('#toc').append(button);return button;
+  });
+  function setTocCurrent(index){
+    tocButtons.forEach((button,i)=>button.setAttribute('aria-current',String(i===index)));
+    const button=tocButtons[index],bar=$('#toc');
+    if(button&&(button.offsetLeft<bar.scrollLeft||button.offsetLeft+button.offsetWidth>bar.scrollLeft+bar.clientWidth))bar.scrollLeft=button.offsetLeft-16;
+  }
+  // Narrow dialogs clip the chip row: fade the clipped edge and let a plain mouse wheel scroll it sideways.
+  const tocBar=$('#toc');
+  const tocEdges=()=>{const max=tocBar.scrollWidth-tocBar.clientWidth;tocBar.toggleAttribute('data-more-start',tocBar.scrollLeft>1);tocBar.toggleAttribute('data-more-end',tocBar.scrollLeft<max-1);};
+  tocBar.addEventListener('scroll',tocEdges,{passive:true});
+  tocBar.addEventListener('wheel',event=>{
+    if(event.ctrlKey||Math.abs(event.deltaX)>=Math.abs(event.deltaY)||tocBar.scrollWidth<=tocBar.clientWidth)return;
+    event.preventDefault();tocBar.scrollLeft+=event.deltaMode===1?event.deltaY*16:event.deltaY;
+  },{passive:false});
+  new ResizeObserver(tocEdges).observe(tocBar);
+  let tocFrame=0;
+  $('form').addEventListener('scroll',()=>{
+    if(tocFrame)return;
+    tocFrame=requestAnimationFrame(()=>{
+      tocFrame=0;const form=$('form'),top=form.getBoundingClientRect().top+24;
+      let current=0;tocSections.forEach((section,i)=>{if(section.getBoundingClientRect().top<=top)current=i;});
+      if(form.scrollTop+form.clientHeight>=form.scrollHeight-2)current=tocSections.length-1;
+      setTocCurrent(current);
+    });
+  },{passive:true});
+  setTocCurrent(0);
 
   function status(message, error=false) {
     $('#status').textContent = message;
@@ -315,6 +376,8 @@
     $('#liquid-options').hidden=settings.timelineMode!=='liquid';
     $('#sidebar-liquid-options').hidden=settings.sidebarMode!=='liquid';
     for(const key of ['sidebarBlur','sidebarOpacity'])$(`[data-key="${key}"]`).disabled=settings.sidebarMode==='solid';
+    $('[data-key="hideNativeCopyLink"]').disabled=!settings.fixupCopy;
+    syncPendingCSSUI();
     const timelineGlass=settings.timelineMode!=='solid';
     preview.querySelector('article').style.cssText = `background:rgb(var(--xm-rgb) / ${timelineGlass ? settings.opacity/100 : 1});backdrop-filter:blur(${timelineGlass ? settings.blur : 0}px);-webkit-backdrop-filter:blur(${timelineGlass ? settings.blur : 0}px)`;
   }
@@ -477,10 +540,15 @@
       if(data.settings.background&&!imageValue(data.settings.background))throw new Error('設定檔的背景圖片格式無效。');
       if(data.videoVolume!==undefined&&data.videoVolume!==null&&!validVolume(data.videoVolume))throw new Error('設定檔的影片音量無效。');
       const history=data.downloadHistory===undefined?null:normalizeDownloadHistory(data.downloadHistory,true);
+      const incoming=normalize(data.settings),warnings=[];
+      if(incoming.customCSS.trim()&&incoming.customCSS!==settings.customCSS)warnings.push(`包含 ${incoming.customCSS.length} 字元的自訂 CSS。自訂 CSS 會直接套用到 X 頁面，可以改變按鈕和文字，也可能把頁面內容送到外部網站。`);
+      if(incoming.background.startsWith('https:')&&incoming.background!==settings.background)warnings.push(`背景圖片來自 ${new URL(incoming.background).host}，該網站會看到你的 IP 位址與瀏覽時間。`);
+      if(syncConfig.auto)warnings.push('已開啟自動同步，匯入的設定也會套用到其他裝置。');
+      if(warnings.length&&!confirm(`匯入這份設定前請確認：\n\n${warnings.map(text=>`• ${text}`).join('\n')}\n\n只匯入你信任的檔案。要繼續嗎？`)){status('已取消匯入。');return;}
       imageRequest++;if(commit(data.settings)){if(data.videoVolume!==undefined)saveVideoVolume(data.videoVolume);if(history)saveDownloadHistory(history);}
     }catch(error){status(`匯入失敗：${error.message}`,true);}
   });
-  $('#reset').addEventListener('click',()=>{if(confirm('將所有 X 極簡設定恢復預設，並移除已儲存的背景圖片與影片音量？')){imageRequest++;if(commit(DEFAULTS))saveVideoVolume(null);}});
+  $('#reset').addEventListener('click',()=>{if(confirm(`將所有 X 極簡設定恢復預設，並移除已儲存的背景圖片與影片音量？${syncConfig.auto?'\n\n已開啟自動同步，其他裝置也會一併恢復預設。':''}\n\n下載紀錄與同步連線不受影響。`)){imageRequest++;if(commit(DEFAULTS))saveVideoVolume(null);}});
 
   function apply() {
     root.dataset.xmEnabled=String(settings.enabled);
@@ -519,6 +587,9 @@
   style.textContent=`
     .xm-media-download{position:relative;display:inline-flex;align-items:center;justify-content:center;align-self:center;flex:none;min-width:36px;height:36px;padding:0;border:0;border-radius:999px;background:transparent;font:inherit;cursor:pointer;vertical-align:middle}
     .xm-media-download:not([data-xm-native-action]){color:var(--xm-action-muted,var(--xm-reading-muted,var(--xm-muted,#536471)))}.xm-media-download:not([data-xm-native-action]):hover{background:rgb(29 155 240 / .1);color:#1d9bf0}.xm-media-download:not([data-xm-native-action]):focus-visible{outline:2px solid currentColor;outline-offset:2px}.xm-media-download:disabled{cursor:progress;opacity:.65}.xm-media-download svg{width:18.75px;height:18.75px;flex:none}.xm-media-result{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+    .xm-media-download[aria-busy] .xm-media-result,.xm-media-download[data-xm-download-error] .xm-media-result,.xm-media-download[data-xm-download-partial] .xm-media-result{width:auto;height:15px;min-width:15px;clip-path:none;overflow:visible;top:0;right:-4px;padding:0 4px;border-radius:999px;background:#1d9bf0;color:#fff;font:600 10px/15px system-ui,sans-serif;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums}
+    .xm-media-download[data-xm-download-error]{color:#f4212e!important}.xm-media-download[data-xm-download-error] .xm-media-result{background:#f4212e}
+    .xm-media-download[data-xm-downloaded]:not([data-xm-native-action]){color:#00ba7c}
     #xm-wallpaper{display:none;position:fixed;inset:0;z-index:-2;pointer-events:none}
     ${ENABLED}[data-xm-image="true"] body{isolation:isolate;background:transparent!important}
     ${ENABLED}[data-xm-image="true"] #xm-wallpaper{display:block}
@@ -528,7 +599,8 @@
     ${ENABLED} [data-xm-shell]{max-width:calc(var(--xm-width) + 636px)!important}
     ${ENABLED}[data-xm-hide-sidebar="true"] [data-xm-layout="new-grid"]{grid-template-columns:minmax(0,1fr)!important}
     ${ENABLED}[data-xm-hide-sidebar="true"] [data-xm-shell]{max-width:calc(var(--xm-width) + 256px)!important}
-    ${ENABLED}[data-xm-hide-sidebar="true"] [data-xm-layout="old-main"]{max-width:var(--xm-width)!important;flex-grow:0!important}
+    ${ENABLED}[data-xm-hide-sidebar="true"]:not([data-xm-center-timeline="true"]) [data-xm-layout="old-main"]{flex:1 1 var(--xm-width)!important;max-width:none!important}
+    ${ENABLED}[data-xm-hide-sidebar="true"]:not([data-xm-center-timeline="true"]) [data-xm-layout="old-main"] [data-xm-path]{width:var(--xm-width)!important;min-width:0!important;max-width:100%!important}
     ${ENABLED}[data-xm-hide-sidebar="false"] [data-xm-layout="old-main"]{max-width:calc(var(--xm-width) + 400px)!important}
     ${ENABLED}[data-xm-center-timeline="true"] [data-xm-shell],${ENABLED}[data-xm-center-timeline="true"] [data-xm-old-shell]{width:100%!important;max-width:var(--xm-center-max)!important;margin-inline:auto!important}
     ${ENABLED}[data-xm-center-timeline="true"] [data-xm-layout="new-grid"]{box-sizing:border-box!important;grid-template-columns:minmax(0,1fr) var(--xm-side-width)!important;padding-inline-start:var(--xm-center-pad-start)!important;padding-inline-end:var(--xm-center-pad-end)!important}
@@ -543,9 +615,11 @@
     ${ENABLED}[data-xm-image="true"][data-xm-mode="glass"] [data-xm-primary]{background-color:rgb(var(--xm-rgb) / var(--xm-opacity))!important;backdrop-filter:blur(var(--xm-blur));-webkit-backdrop-filter:blur(var(--xm-blur))}
     ${ENABLED}[data-xm-image="true"][data-xm-mode="liquid"] [data-xm-primary]{background-color:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     ${ENABLED}[data-xm-image="true"]:is([data-xm-mode="glass"],[data-xm-mode="liquid"]) [data-xm-surface]{background-color:transparent!important}
-    ${ENABLED}:not([data-xm-sidebar-mode="solid"]) :is([data-slot="xds-menu-content"],[data-slot="xds-popover-content"],[data-slot="xds-hover-card-content"],[data-slot="xds-hovercard-content"],[data-base-ui-focusable][data-open][data-side],[role="menu"]):not([data-xm-ui-glass]){background:rgb(var(--xm-rgb) / var(--xm-sidebar-opacity))!important;backdrop-filter:blur(var(--xm-sidebar-blur));-webkit-backdrop-filter:blur(var(--xm-sidebar-blur))}
+    ${ENABLED}:not([data-xm-sidebar-mode="solid"]) :is([data-slot="xds-menu-content"],[data-slot="xds-popover-content"],[data-slot="xds-hover-card-content"],[data-slot="xds-hovercard-content"],[data-base-ui-focusable][data-open][data-side],[role="menu"]):not([data-xm-ui-glass]){background:rgb(var(--xm-rgb) / max(.8,var(--xm-sidebar-opacity)))!important;backdrop-filter:blur(var(--xm-sidebar-blur));-webkit-backdrop-filter:blur(var(--xm-sidebar-blur))}
     :where(${ENABLED} [data-xm-ui-glass]){position:relative}
     ${ENABLED} [data-xm-ui-glass]{isolation:isolate;background:rgb(var(--xm-rgb) / var(--xm-sidebar-opacity))!important;backdrop-filter:blur(var(--xm-sidebar-blur));-webkit-backdrop-filter:blur(var(--xm-sidebar-blur))}
+    /* Menus and popovers carry text over arbitrary media, so keep them opaque enough to read (about 4.5:1 over white or black). */
+    ${ENABLED} [data-xm-ui-glass][data-xm-ui-floating]{background:rgb(var(--xm-rgb) / max(.8,var(--xm-sidebar-opacity)))!important}
     ${ENABLED} [data-xm-ui-glass]:is([data-xm-glass-renderer="webgl"],[data-xm-glass-renderer="blur"],[data-xm-glass-renderer="solid"]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     ${ENABLED} [data-xm-ui-floating]{border-color:transparent!important;border-radius:16px!important}
     ${ENABLED} [data-xm-ui-clear],${ENABLED}[data-xm-image="true"] [data-xm-utility-path]{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
@@ -553,6 +627,7 @@
     ${ENABLED} [data-xm-nav] :is(a,button,[role="button"])>:is(span,div):has(>[data-xm-generated-nav-label]){column-gap:20px!important}
     ${ENABLED} [data-xm-timeline-menu]{translate:0 0!important}
     ${ENABLED}[data-xm-hide-native-copy-link="true"] [data-xm-share-native]{display:none!important}
+    ${ENABLED} [data-xm-fixup-row]:not([data-slot]):is(:hover,:focus){background-color:color-mix(in srgb,currentColor 8%,transparent);outline:none}
     ${ENABLED} [data-xm-ui-glass]>[class~="pointer-events-none"][class~="absolute"][class*="backdrop-blur"]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     @media(prefers-reduced-transparency:reduce){${ENABLED} [data-xm-ui-glass][data-xm-glass-renderer="off"]{background:rgb(var(--xm-rgb))!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
     @media(forced-colors:active){${ENABLED} [data-xm-ui-glass]{background:Canvas!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
@@ -622,7 +697,7 @@
     ${rules('hide-suggestions','li[data-index][data-xm-suggestion],li[data-index]:has([data-xm-suggestion]),[data-testid="cellInnerDiv"][data-xm-suggestion]','display:block!important;visibility:hidden!important;pointer-events:none!important;max-height:1px!important;min-height:1px!important;height:1px!important;overflow:hidden!important;margin:0!important;padding:0!important;border:0!important')}
     ${ENABLED}[data-xm-home="true"][data-xm-hide-top-tabs="true"] [data-xm-home-tabs]{display:none!important}
     ${ENABLED}[data-xm-home="true"][data-xm-hide-composer="true"] [data-xm-composer]{display:none!important}
-    ${rules('hide-view-count','[data-xm-primary] a[href$="/analytics"]')}
+    ${rules('hide-view-count','[data-xm-primary] a[href$="/analytics"],a[href*="/status/"][href$="/analytics"]')}
     ${rules('hide-reply-count','[data-engagement-action="reply"] .x-animated-count-visual,[data-testid="reply"] [data-testid="app-text-transition-container"]')}
     ${rules('hide-repost-count','[data-engagement-action="retweet"] .x-animated-count-visual,[data-testid="retweet"] [data-testid="app-text-transition-container"],[data-testid="unretweet"] [data-testid="app-text-transition-container"]')}
     ${rules('hide-like-count','[data-engagement-action="like"] .x-animated-count-visual,[data-testid="like"] [data-testid="app-text-transition-container"],[data-testid="unlike"] [data-testid="app-text-transition-container"]')}
@@ -635,7 +710,7 @@
     ${rules('transparent-search','[data-xm-search], [data-xm-search-fill], [data-xm-search] [data-slot="xds-combobox-input-group"]','background-color:transparent!important')}
     ${rules('hide-post-button','[data-xm-post-button],[data-xm-post-host]')}
     ${ENABLED} [data-xm-post-host]{box-sizing:border-box!important;width:256px!important;min-width:0!important;margin:12px 0!important;padding:0!important;flex-shrink:0}
-    ${ENABLED} [data-xm-nav-panel] [data-xm-post-button]{--xm-post-icon:url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linejoin="round"><path d="m14 5 5 5M4 20l4-1L21 6a2.12 2.12 0 0 0-3-3L5 16z"/></svg>')}");box-sizing:border-box!important;display:flex;align-items:center!important;justify-content:flex-start!important;gap:20px;width:232px!important;min-width:0!important;height:48px!important;min-height:48px!important;margin-inline:12px!important;padding:12px!important;border-radius:24px!important;flex-shrink:0}
+    ${ENABLED} [data-xm-nav-panel] [data-xm-post-button]{--xm-post-icon:url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.8" stroke-linejoin="round"><path d="m14 5 5 5M4 20l4-1L21 6a2.12 2.12 0 0 0-3-3L5 16z"/></svg>')}");box-sizing:border-box!important;display:flex;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:20px;width:232px!important;min-width:0!important;height:48px!important;min-height:48px!important;margin-inline:12px!important;padding:12px!important;border-radius:24px!important;flex-shrink:0}
     ${ENABLED} [data-xm-nav-panel] [data-xm-post-button]::before{content:"";display:block;width:24px;height:24px;flex:0 0 24px;background:var(--xm-post-ink,currentColor);mask:var(--xm-post-icon) center/contain no-repeat;-webkit-mask:var(--xm-post-icon) center/contain no-repeat}
     ${ENABLED} [data-xm-nav-panel] [data-xm-post-button]>:is(div,span){flex:none!important;min-width:0!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;justify-content:flex-start!important;text-align:start!important}
     ${ENABLED} [data-xm-nav-panel] [data-xm-post-button] svg{display:none!important}
@@ -645,6 +720,8 @@
     ${ENABLED}[data-xm-nav-compact="true"][data-xm-nav-expanded="false"] [data-xm-nav-panel] [data-xm-post-button]::after{display:none}
     ${rules('system-font','body,body button,body input,body textarea','font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important')}
     ${ENABLED} [data-xm-nav-hidden="true"]{display:none!important}
+    ${ENABLED} [data-xm-tabbar]>:has([data-xm-nav-hidden="true"]):not(:has([data-xm-nav-hidden="false"])){display:none!important}
+    ${ENABLED} [data-xm-tabbar] [data-xm-nav-label]{display:none!important}
     :where(${ENABLED} [data-xm-nav-rail]){position:relative}
     /* Motion Prompt #050 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#050 */
     /* Drawer timing adapted to a width reveal so the icon rail stays in place. */
@@ -736,7 +813,7 @@
   const SHARE_TRIGGER='[data-testid="share"],[data-engagement-action="share"]';
   let shareCopy=null;
   function updateShareMenu(){
-    const trigger=settings.enabled?[...document.querySelectorAll('article [aria-expanded="true"][aria-haspopup="menu"]')].find(button=>
+    const trigger=settings.enabled&&settings.fixupCopy?[...document.querySelectorAll('article [aria-expanded="true"][aria-haspopup="menu"]')].find(button=>
       button.closest(SHARE_TRIGGER)||button.querySelector(SHARE_TRIGGER)||/^(share(?: post| tweet)?|分享(?:貼文|推文|帖子)?|(?:ポスト|ツイート)を共有)$/i.test(button.getAttribute('aria-label')||'')
     ):null;
     const article=trigger?.closest('article');
@@ -746,7 +823,7 @@
     const url=path&&`https://fixupx.com${path.replace(/^\/i\/web\//i,'/i/')}`;
     const controlled=trigger&&document.getElementById(trigger.getAttribute('aria-controls'));
     const native=url&&[...(controlled||document).querySelectorAll('[role="menuitem"]')].find(item=>{
-      if(item.hasAttribute('data-xm-fixup-copy')||!item.closest(SHARE_MENU)?.getClientRects().length)return false;
+      if(item.hasAttribute('data-xm-fixup-row')||!item.closest(SHARE_MENU)?.getClientRects().length)return false;
       if(item!==shareCopy?.native&&!item.getClientRects().length)return false;
       return item.matches('[data-testid="copyLink"]')||COPY_LINK.test(item.getAttribute('aria-label')||'')||COPY_LINK.test(item.textContent.trim());
     });
@@ -760,8 +837,8 @@
     const row=native.cloneNode(true);
     for(const element of [row,...row.querySelectorAll('[id]')])element.removeAttribute('id');
     for(const attribute of ['data-testid','href','aria-label','aria-labelledby','data-highlighted'])row.removeAttribute(attribute);
-    row.tabIndex=0;
-    mark(row,'fixup-copy');
+    row.tabIndex=-1;
+    mark(row,'fixup-row');
     const label=[...row.querySelectorAll('span,div')].find(element=>!element.childElementCount&&element.textContent.trim()===native.textContent.trim())||row;
     label.textContent='複製 FixupX 連結';
     label.setAttribute('aria-live','polite');
@@ -771,17 +848,50 @@
       event.stopPropagation();
       try{
         await navigator.clipboard.writeText(url);
-        label.textContent='已複製 FixupX 連結';
+        label.textContent='已複製連結';
+        // Close the menu the way the native item does, after the confirmation is announced.
+        setTimeout(()=>closeShareMenu(row,trigger),450);
       }catch{
         label.textContent='複製失敗，點擊重試';
         unmark(native,'share-native');
       }
     };
     row.addEventListener('click',copy);
-    row.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')copy(event);});
+    row.addEventListener('pointermove',()=>{if(row.isConnected&&document.activeElement!==row)row.focus({preventScroll:true});});
+    // The new UI paints the hover/keyboard highlight from data-highlighted, which X only sets on its own items.
+    row.addEventListener('focus',()=>row.setAttribute('data-highlighted',''));
+    row.addEventListener('blur',()=>row.removeAttribute('data-highlighted'));
+    // X's menus move focus between the items they registered; the copied row joins that order here.
+    const items=()=>[...row.closest(SHARE_MENU)?.querySelectorAll('[role="menuitem"]')||[]].filter(item=>item.getClientRects().length);
+    row.addEventListener('keydown',event=>{
+      if(event.key==='Enter'||event.key===' '){copy(event);return;}
+      if(event.key!=='ArrowDown'&&event.key!=='ArrowUp')return;
+      const list=items(),index=list.indexOf(row),next=list[(index+(event.key==='ArrowDown'?1:-1)+list.length)%list.length];
+      if(next&&next!==row){event.preventDefault();event.stopPropagation();next.focus();}
+    });
+    const enter=event=>{
+      if(!row.isConnected||!event.isTrusted)return;
+      const list=items(),index=list.indexOf(event.currentTarget);
+      if(index<0)return;
+      const step=event.key==='ArrowDown'?1:event.key==='ArrowUp'?-1:0;
+      if(step&&list[(index+step+list.length)%list.length]===row){event.preventDefault();event.stopPropagation();row.focus();}
+    };
     native.after(row);
+    for(const item of items()){if(item!==row&&!item.hasAttribute('data-xm-fixup-keys')){item.setAttribute('data-xm-fixup-keys','');item.addEventListener('keydown',enter);}}
     mark(native,'share-native');
     shareCopy={row,native,url};
+  }
+  function closeShareMenu(row,trigger){
+    if(!row.isConnected)return;
+    const options={key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true,composed:true};
+    // The new UI closes on keydown; the old React Native Web dropdown closes on keyup.
+    const escape=target=>{for(const type of ['keydown','keyup'])target.dispatchEvent(new KeyboardEvent(type,options));};
+    escape(row);
+    setTimeout(()=>{
+      if(!row.isConnected||!row.getClientRects().length)return;
+      escape(document);
+      if(row.isConnected&&trigger?.getAttribute('aria-expanded')==='true')trigger.focus();
+    },60);
   }
   function markControl(control,name){
     const dock=control.closest('[data-slot="xds-dock-window"],[data-slot="xds-dock-item"]');
@@ -885,8 +995,9 @@
     }
   }
   function updateNavTheme(nav){
-    let panel=nav?.closest('header[role="banner"]')?.firstElementChild||nav;
-    for(let parent=nav?.parentElement;parent&&parent!==document.body;parent=parent.parentElement){
+    // The bottom tab bar keeps X's own background; the glass rail is only for the side navigation.
+    let panel=nav?.hasAttribute('data-xm-tabbar')?null:nav?.closest('header[role="banner"]')?.firstElementChild||nav;
+    for(let parent=panel&&nav?.parentElement;parent&&parent!==document.body;parent=parent.parentElement){
       if(parent.matches('header[role="banner"]'))break;
       if(['sticky','fixed'].includes(getComputedStyle(parent).position)){panel=parent;break;}
     }
@@ -903,7 +1014,7 @@
       }
     }
     for(const previous of document.querySelectorAll('[data-xm-nav-stack]'))unmark(previous,'nav-stack');
-    for(let parent=nav?.parentElement;parent&&parent!==panel&&!parent.querySelector('[data-xm-nav-account]');parent=parent.parentElement)mark(parent,'nav-stack');
+    for(let parent=panel&&nav?.parentElement;parent&&parent!==panel&&!parent.querySelector('[data-xm-nav-account]');parent=parent.parentElement)mark(parent,'nav-stack');
     const rgb=sampleWallpaper(panel?.getBoundingClientRect());
     const luminance=rgb.map(c=>{const value=c/255;return value<=.04045?value/12.92:((value+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
     const dark=luminance<.179;
@@ -1003,7 +1114,13 @@
     const nav=document.querySelector('nav:has(a[href="/home"]),nav[aria-label="Primary"],header[role="banner"] nav[role="navigation"]');
     mark(nav,'nav');
     const navVisible=nav&&nav.getClientRects().length>0;
-    if(navVisible&&!nav.contains(host))moveSettings(nav,'nav');
+    // Narrow windows turn the side navigation into a bottom tab bar; the launcher then joins it as one more tab.
+    const tabbar=navVisible&&getComputedStyle(nav).flexDirection.startsWith('row');
+    for(const previous of document.querySelectorAll('[data-xm-tabbar]'))if(previous!==nav||!tabbar)unmark(previous,'tabbar');
+    if(tabbar)mark(nav,'tabbar');
+    const placement=tabbar?'tabbar':'nav';
+    if(navVisible&&!nav.contains(host))moveSettings(nav,placement);
+    else if(navVisible&&host.dataset.placement!==placement)host.dataset.placement=placement;
     else if(!navVisible&&host.parentElement!==document.body)moveSettings(document.body,'fallback');
     updateNavTheme(nav);bindNavigation(nav);
     const primary=excluded?null:document.querySelector('[data-testid="primaryColumn"]')||document.querySelector('main');
@@ -1011,7 +1128,7 @@
     for(const old of document.querySelectorAll('[data-xm-primary]'))if(old!==primary)unmark(old,'primary');
     for(const old of document.querySelectorAll('[data-xm-layout],[data-xm-shell],[data-xm-old-shell],[data-xm-old-header],[data-xm-old-columns]')){if(excluded)for(const name of ['layout','shell','old-shell','old-header','old-columns'])unmark(old,name);}
     const nextPaths=new Set(),nextSurfaces=new Set();
-    for(const previous of document.querySelectorAll('[data-xm-post-divider]'))unmark(previous,'post-divider');
+    const nextDividers=new Set();
     if(primary){
       mark(primary,'primary');
       const old=primary.hasAttribute('data-testid');
@@ -1053,24 +1170,35 @@
           if(following){followedPrimary=primary;if(following.getAttribute('aria-selected')!=='true')following.click();}
         }
       }
-      for(const element of primary.querySelectorAll('div')){
-        if(element.closest('[id^="xm-liquid"],article,[role=dialog],[role=menu],[data-xm-composer]'))continue;
-        const css=getComputedStyle(element),box=element.getBoundingClientRect();
-        if(css.position==='sticky'&&box.height>0&&box.height<=180)mark(element,'header');
+      // Read every computed style first and write the markers afterwards, so the browser lays out once per pass.
+      const stickyHeaders=[],walker=document.createTreeWalker(primary,NodeFilter.SHOW_ELEMENT,{acceptNode:node=>
+        node.matches('article,[id^="xm-liquid"],[role=dialog],[role=menu],[data-xm-composer],[data-testid="cellInnerDiv"]')?NodeFilter.FILTER_REJECT:node.tagName==='DIV'?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP});
+      for(let element=walker.nextNode();element;element=walker.nextNode()){
+        if(getComputedStyle(element).position!=='sticky')continue;
+        const height=element.getBoundingClientRect().height;
+        if(height>0&&height<=180)stickyHeaders.push(element);
       }
+      const posts=[];
       for(const article of primary.querySelectorAll('article')){
         const row=article.closest('[data-testid="cellInnerDiv"]')||article.closest('[data-href]')||article;
-        mark(row,'post');
+        let divider=null;
         for(let edge=article;edge&&edge!==primary;edge=edge.parentElement){
           if(edge!==article&&edge.matches('article'))break;
           const css=getComputedStyle(edge);
-          if(parseFloat(css.borderRadius)===0&&(parseFloat(css.borderBottomWidth)>0||parseFloat(css.borderTopWidth)>0)){mark(edge,'post-divider');break;}
+          if(parseFloat(css.borderRadius)===0&&(parseFloat(css.borderBottomWidth)>0||parseFloat(css.borderTopWidth)>0)){divider=edge;break;}
           if(edge!==article&&[...edge.children].filter(child=>child.matches('article')||child.querySelector('article')).length>1)break;
         }
         const ad=!!(article.closest('[data-testid="placementTracking"]')||article.querySelector('[data-ad-disclosure],[class*="data-ad-disclosure"],a[href*="twclid="]'));
+        posts.push([row,divider,ad]);
+      }
+      for(const element of stickyHeaders)mark(element,'header');
+      for(const [row,divider,ad] of posts){
+        mark(row,'post');if(divider)nextDividers.add(divider);
         if(ad)mark(row,'ad');else unmark(row,'ad');
       }
     }
+    for(const previous of document.querySelectorAll('[data-xm-post-divider]'))if(!nextDividers.has(previous))unmark(previous,'post-divider');
+    for(const element of nextDividers)mark(element,'post-divider');
     for(const element of paths)if(!nextPaths.has(element))unmark(element,'path');
     for(const element of nextPaths)mark(element,'path');paths=nextPaths;
     for(const element of surfaces)if(!nextSurfaces.has(element))unmark(element,'surface');
@@ -1198,7 +1326,10 @@
     for(const [key,value] of Object.entries(vars))if(root.style.getPropertyValue(key)!==value)root.style.setProperty(key,value);
   }
   let scheduled=false;
+  // Text that changes inside posts (relative times, counters, video clocks) never changes the layout this script manages.
+  const quietText=record=>record.type==='characterData'&&!!record.target.parentElement?.closest('article,time,[data-testid="videoPlayer"],[data-testid="videoComponent"],[role="slider"]');
   function schedule(records=[]) {
+    if(Array.isArray(records)&&records.length){records=records.filter(record=>!quietText(record));if(!records.length)return;}
     if(records.length&&records.every(record=>record.target===host||record.target===wallpaper||record.target===style||record.target===customStyle))return;
     const pageAdded=Array.isArray(records)&&records.some(record=>record.type==='childList'&&[...record.addedNodes].some(node=>node instanceof Element&&(node.matches('main,[data-testid="primaryColumn"],[data-testid="xchatEmbedRoute"],[data-page-header],[role="tablist"],[data-testid="tweetTextarea_0"],form[role="search"],input[role="combobox"],[data-testid="sidebarColumn"]')||node.querySelector('main,[data-testid="primaryColumn"],[data-testid="xchatEmbedRoute"],[data-page-header],[role="tablist"],[data-testid="tweetTextarea_0"],form[role="search"],input[role="combobox"],[data-testid="sidebarColumn"]'))));
     if(location.pathname!==lastRoute||pageAdded){refresh();return;}
@@ -1231,6 +1362,7 @@
     GM_addValueChangeListener(SYNC_META_KEY,(_key,_old,value,remote)=>{if(remote){for(const [key,stamp] of Object.entries(value?.fields||{})){const old=syncMeta.fields[key];if([...Object.keys(DEFAULTS),'videoVolume'].includes(key)&&Number.isSafeInteger(stamp?.at)&&stamp.at>=0&&typeof stamp.device==='string'&&/^[-\w]{0,80}$/.test(stamp.device)&&(!old||stamp.at>old.at||stamp.at===old.at&&stamp.device>old.device))syncMeta.fields[key]={at:stamp.at,device:stamp.device};}syncController?.changed();}});
     GM_addValueChangeListener(SYNC_CONFIG_KEY,(_key,_old,_value,remote)=>{if(remote){const old=syncConfig;syncConfig=loadSyncConfig();syncMessage='';syncConnectionUI();if(old.provider!==syncConfig.provider||old.auto!==syncConfig.auto||JSON.stringify(old[old.provider])!==JSON.stringify(syncConfig[syncConfig.provider]))syncController?.changed();}});
     GM_addValueChangeListener(DOWNLOAD_KEY,(_key,_old,value,remote)=>{if(remote){const merged=mergeDownloadHistory(downloadHistory,value);downloadHistory=merged;try{if(JSON.stringify(merged)!==JSON.stringify(normalizeDownloadHistory(value)))GM_setValue(DOWNLOAD_KEY,merged);}catch{}syncDownloadHistoryUI();mediaDownloader?.update();}});
+    GM_addValueChangeListener(DOWNLOAD_DELETED_KEY,(_key,_old,value,remote)=>{if(remote){downloadDeleted=mergeDownloadDeleted(downloadDeleted,value);downloadHistory=pruneDownloadHistory(downloadHistory,downloadDeleted);syncDownloadHistoryUI();mediaDownloader?.update();}});
     GM_addValueChangeListener(AUDIO_KEY,(_key,_old,value,remote)=>{if(remote&&(value===null||validVolume(value))){videoVolume=value;updateVideoAudio();syncVideoVolume();}});
   }
   // Liquid Glass shaders adapted from TW527E/tw527e.zip, MIT, Copyright (c) 2026 TW527E.
@@ -2076,47 +2208,7 @@
       return {url: mediaURL(playable[0].url, 'video.twimg.com').href, extension: 'mp4', index};
     }
 
-    async function resolve(tweetId) {
-      if (typeof tweetId !== 'string' || !/^\d{1,25}$/.test(tweetId)) throw new Error('貼文網址無效。');
-      const cookies = Object.fromEntries(document.cookie.split(';').map(item => {
-        const at = item.indexOf('=');
-        return at < 0 ? ['', ''] : [item.slice(0, at).trim(), item.slice(at + 1).trim()];
-      }));
-      if (!cookies.ct0) throw new Error('請先登入 X，再重試下載。');
-      const headers = {
-        authorization: `Bearer ${BEARER}`,
-        'x-twitter-active-user': 'yes',
-        'x-twitter-client-language': cookies.lang || 'en',
-        'x-csrf-token': cookies.ct0
-      };
-      if (cookies.ct0.length === 32 && cookies.gt) headers['x-guest-token'] = cookies.gt;
-      const url = new URL(`/i/api/graphql/${QUERY_ID}/TweetResultByRestId`, location.origin);
-      url.searchParams.set('variables', JSON.stringify({
-        tweetId, with_rux_injections: false, includePromotedContent: true, withCommunity: true,
-        withQuickPromoteEligibilityTweetFields: true, withBirdwatchNotes: true, withVoice: true, withV2Timeline: true
-      }));
-      url.searchParams.set('features', JSON.stringify(FEATURES));
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-      let response, payload;
-      try {
-        response = await fetch(url.href, {headers, credentials: 'same-origin', signal: controller.signal});
-        if (response.status === 429) throw new Error('X 暫時限制請求，請稍後重試。');
-        if (response.status === 401 || response.status === 403) throw new Error('無法讀取這則貼文，請確認已登入且有存取權。');
-        if (!response.ok) throw new Error(`讀取媒體失敗（HTTP ${response.status}）。`);
-        try { payload = await response.json(); }
-        catch { throw new Error('X 回傳的媒體資料無效，請稍後重試。'); }
-      } catch (error) {
-        if (controller.signal.aborted) throw new Error('讀取媒體逾時，請重試。');
-        if (error?.name === 'TypeError') throw new Error('讀取媒體失敗，請檢查網路連線後重試。');
-        throw error;
-      } finally { clearTimeout(timeout); }
-      const result = payload?.data?.tweetResult?.result;
-      const tweet = result?.tweet || result;
-      if (!tweet?.legacy || tweet.__typename === 'TweetTombstone' || tweet.__typename === 'TweetUnavailable') {
-        throw new Error('目前無法讀取這則貼文的媒體。');
-      }
-      const media = tweet.legacy.extended_entities?.media || tweet.legacy.entities?.media;
+    function mediaItems(media) {
       if (!Array.isArray(media) || !media.length) throw new Error('這則貼文沒有可下載的圖片或影片。');
       return media.map((item, index) => {
         if (item?.type === 'photo') return photo(item, index + 1);
@@ -2124,22 +2216,134 @@
         throw new Error('這則貼文包含目前不支援下載的媒體。');
       });
     }
+    // Errors that mean the request shape is stale rather than the post being unavailable.
+    const stale = message => Object.assign(new Error(message), {stale: true});
+    let api = {queryId: QUERY_ID, features: FEATURES}, discovery = null;
+
+    async function graphql(tweetId, cookies, current) {
+      const headers = {
+        authorization: `Bearer ${BEARER}`,
+        'x-twitter-active-user': 'yes',
+        'x-twitter-client-language': cookies.lang || 'en',
+        'x-csrf-token': cookies.ct0
+      };
+      if (cookies.ct0.length === 32 && cookies.gt) headers['x-guest-token'] = cookies.gt;
+      const url = new URL(`/i/api/graphql/${current.queryId}/TweetResultByRestId`, location.origin);
+      url.searchParams.set('variables', JSON.stringify({
+        tweetId, with_rux_injections: false, includePromotedContent: true, withCommunity: true,
+        withQuickPromoteEligibilityTweetFields: true, withBirdwatchNotes: true, withVoice: true, withV2Timeline: true
+      }));
+      url.searchParams.set('features', JSON.stringify(current.features));
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+      let response, payload;
+      try {
+        response = await fetch(url.href, {headers, credentials: 'same-origin', signal: controller.signal});
+        if (response.status === 429) throw new Error('X 暫時限制請求，請稍後重試。');
+        if (response.status === 401 || response.status === 403) throw new Error('無法讀取這則貼文，請確認已登入且有存取權。');
+        if ([400, 404, 410, 422].includes(response.status)) throw stale(`X 的媒體介面已變更（HTTP ${response.status}）。`);
+        if (!response.ok) throw new Error(`讀取媒體失敗（HTTP ${response.status}）。`);
+        try { payload = await response.json(); }
+        catch { throw stale('X 回傳的媒體資料無效。'); }
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error('讀取媒體逾時，請重試。');
+        if (error?.name === 'TypeError') throw new Error('讀取媒體失敗，請檢查網路連線後重試。');
+        throw error;
+      } finally { clearTimeout(timeout); }
+      const result = payload?.data?.tweetResult?.result;
+      const tweet = result?.tweet || result;
+      if (tweet?.__typename === 'TweetTombstone' || tweet?.__typename === 'TweetUnavailable') throw new Error('目前無法讀取這則貼文的媒體。');
+      if (!tweet?.legacy) throw stale(payload?.errors?.length ? 'X 的媒體介面已變更。' : '目前無法讀取這則貼文的媒體。');
+      return mediaItems(tweet.legacy.extended_entities?.media || tweet.legacy.entities?.media);
+    }
+
+    // The classic web bundle lists each GraphQL operation with its current ID and feature switches.
+    function discover() {
+      discovery ??= (async () => {
+        const sources = new Set([...document.querySelectorAll('script[src]')].map(script => script.src));
+        for (const entry of performance.getEntriesByType?.('resource') || []) sources.add(entry.name);
+        const bundles = [...sources].filter(source => /^https:\/\/abs\.twimg\.com\/responsive-web\/client-web(?:-legacy)?\/main\.[\w-]+\.js$/.test(source));
+        for (const source of bundles) {
+          try {
+            const response = await fetch(source, {credentials: 'omit'});
+            if (!response.ok) continue;
+            const text = await response.text();
+            const match = text.match(/queryId:"([\w-]{8,64})",operationName:"TweetResultByRestId",operationType:"query",metadata:\{featureSwitches:\[([^\]]*)\]/);
+            if (!match) continue;
+            const switches = [...match[2].matchAll(/"(\w{1,100})"/g)].map(item => item[1]);
+            return {queryId: match[1], features: Object.fromEntries(switches.map(key => [key, FEATURES[key] ?? false]))};
+          } catch {}
+        }
+        return null;
+      })();
+      return discovery;
+    }
+
+    // Public embed endpoint. Works without the GraphQL query ID, but not for protected posts.
+    function syndication(tweetId) {
+      return new Promise((resolve, reject) => {
+        if (typeof GM_xmlhttpRequest !== 'function') { reject(new Error('請更新腳本並允許 Tampermonkey 的跨站請求權限。')); return; }
+        const token = ((Number(tweetId) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
+        const url = `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=${encodeURIComponent(token)}&lang=en`;
+        try {
+          GM_xmlhttpRequest({url, method: 'GET', anonymous: true, timeout: 20000, redirect: 'error',
+            onload: response => {
+              try {
+                if (response.status !== 200) throw new Error(`備用媒體來源無法讀取這則貼文（HTTP ${response.status}）。`);
+                const tweet = JSON.parse(response.responseText);
+                if (tweet?.__typename !== 'Tweet') throw new Error('備用媒體來源無法讀取這則貼文。');
+                resolve(mediaItems(tweet.mediaDetails));
+              } catch (error) { reject(error instanceof SyntaxError ? new Error('備用媒體來源回傳的資料無效。') : error); }
+            },
+            onerror: () => reject(new Error('備用媒體來源連線失敗。')),
+            ontimeout: () => reject(new Error('備用媒體來源逾時。'))
+          });
+        } catch { reject(new Error('無法啟動備用媒體來源，請檢查 Tampermonkey 的跨站請求權限。')); }
+      });
+    }
+
+    async function resolve(tweetId) {
+      if (typeof tweetId !== 'string' || !/^\d{1,25}$/.test(tweetId)) throw new Error('貼文網址無效。');
+      const cookies = Object.fromEntries(document.cookie.split(';').map(item => {
+        const at = item.indexOf('=');
+        return at < 0 ? ['', ''] : [item.slice(0, at).trim(), item.slice(at + 1).trim()];
+      }));
+      if (!cookies.ct0) return syndication(tweetId).catch(error => { throw new Error(`請先登入 X 再重試。（${error.message}）`); });
+      let failure;
+      try { return await graphql(tweetId, cookies, api); }
+      catch (error) { if (!error.stale) throw error; failure = error; }
+      const found = await discover();
+      if (found && found.queryId !== api.queryId) {
+        try { const media = await graphql(tweetId, cookies, found); api = found; return media; }
+        catch (error) { if (!error.stale) throw error; }
+      }
+      try { return await syndication(tweetId); }
+      catch (error) { throw new Error(`${failure.message}備用來源也失敗：${error.message}請更新 X 極簡後再試。`); }
+    }
     return {resolve, photo};
   }
 
   // Cross-device storage. Credentials stay in this device's GM storage.
+  const SYNC_DEFAULTS={...DEFAULTS,videoVolume:null};
+  // A field this version can apply. Unknown or newer-format fields stay in the cloud copy untouched.
+  function applicableSyncValue(key,value){
+    if(key==='videoVolume')return value===null||validVolume(value);
+    if(!Object.hasOwn(DEFAULTS,key))return false;
+    return JSON.stringify(normalize({[key]:value})[key])===JSON.stringify(value);
+  }
   function normalizeSyncDocument(value){
     if(!value||value.format!=='x-minimal-sync'||value.version!==1||!value.fields||typeof value.fields!=='object'||Array.isArray(value.fields))throw Error('雲端資料格式錯誤，已保留本機資料。');
-    const fields=Object.create(null),keys=[...Object.keys(DEFAULTS),'videoVolume'];
+    const fields=Object.create(null);
     for(const key of Object.keys(value.fields).sort()){
       const field=value.fields[key];
-      if(!keys.includes(key))throw Error('雲端資料包含這版不支援的設定，請先更新腳本。');
+      if(!/^[A-Za-z]\w{0,63}$/.test(key))throw Error('雲端資料的欄位名稱無效，已保留本機資料。');
       if(!field||!Number.isSafeInteger(field.at)||field.at<0||field.at>8640000000000000||typeof field.device!=='string'||!/^[-\w]{0,80}$/.test(field.device))throw Error('雲端資料的版本標記無效。');
-      const clean=key==='videoVolume'?(field.value===null||validVolume(field.value)?field.value:undefined):normalize({[key]:field.value})[key];
-      if(clean===undefined||JSON.stringify(clean)!==JSON.stringify(field.value))throw Error('雲端設定內容無效，已保留本機資料。');
+      if(field.value===undefined)throw Error('雲端設定內容無效，已保留本機資料。');
+      let clean;try{clean=JSON.parse(JSON.stringify(field.value));}catch{throw Error('雲端設定內容無效，已保留本機資料。');}
       fields[key]={value:clean,at:field.at,device:field.device};
     }
-    return {format:'x-minimal-sync',version:1,fields,downloadHistory:normalizeDownloadHistory(value.downloadHistory??{},true)};
+    const downloadDeleted=normalizeDownloadDeleted(value.downloadDeleted??{});
+    return {format:'x-minimal-sync',version:1,fields,downloadHistory:pruneDownloadHistory(normalizeDownloadHistory(value.downloadHistory??{},true),downloadDeleted),downloadDeleted};
   }
   function mergeSyncDocuments(a,b){
     a=normalizeSyncDocument(a);b=normalizeSyncDocument(b);
@@ -2148,7 +2352,8 @@
       const left=a.fields[key],right=b.fields[key];
       fields[key]=!left?right:!right?left:right.at>left.at||right.at===left.at&&right.device>=left.device?right:left;
     }
-    return {format:'x-minimal-sync',version:1,fields,downloadHistory:mergeDownloadHistory(a.downloadHistory,b.downloadHistory)};
+    const downloadDeleted=mergeDownloadDeleted(a.downloadDeleted,b.downloadDeleted);
+    return {format:'x-minimal-sync',version:1,fields,downloadHistory:mergeDownloadHistory(a.downloadHistory,b.downloadHistory,downloadDeleted),downloadDeleted};
   }
   function syncURL(value,provider){
     if(typeof value!=='string'||value.length>2048)throw Error('請輸入有效的同步網址。');
@@ -2188,49 +2393,100 @@
   }
   function storageSnapshot(){
     const fields=Object.create(null);
-    for(const [key,value] of Object.entries({...settings,videoVolume}))fields[key]={value,...(syncMeta.fields[key]||{at:0,device:''})};
-    return normalizeSyncDocument({format:'x-minimal-sync',version:1,fields,downloadHistory});
+    for(const [key,value] of Object.entries({...settings,videoVolume})){
+      const stamp=syncMeta.fields[key]||{at:0,device:''};
+      // Untouched defaults stay local, so older versions never see settings they do not know yet.
+      if(stamp.at===0&&JSON.stringify(value)===JSON.stringify(SYNC_DEFAULTS[key]))continue;
+      fields[key]={value,...stamp};
+    }
+    return normalizeSyncDocument({format:'x-minimal-sync',version:1,fields,downloadHistory,downloadDeleted});
   }
+  let pendingCSS=null;
   function applySynchronized(document){
-    const next={...settings};
-    for(const [key,field] of Object.entries(document.fields))if(key!=='videoVolume')next[key]=field.value;
+    const next={...settings},applied=[];
+    for(const [key,field] of Object.entries(document.fields)){
+      if(key==='videoVolume'||!applicableSyncValue(key,field.value))continue;
+      if(key==='customCSS'&&field.value.trim()&&field.value!==settings.customCSS){
+        // CSS runs on x.com, so another device's stylesheet waits for confirmation here.
+        pendingCSS={value:field.value,at:field.at,device:field.device};continue;
+      }
+      next[key]=field.value;applied.push(key);
+    }
+    if(pendingCSS&&(document.fields.customCSS?.value!==pendingCSS.value||settings.customCSS===pendingCSS.value))pendingCSS=null;
     if(JSON.stringify(next)!==JSON.stringify(settings)&&!commit(next,'',false))throw Error('本機設定儲存失敗，雲端版本已保留。');
-    if(document.fields.videoVolume&&videoVolume!==document.fields.videoVolume.value&&!saveVideoVolume(document.fields.videoVolume.value,false))throw Error('本機音量儲存失敗。');
+    const volume=document.fields.videoVolume;
+    if(volume&&applicableSyncValue('videoVolume',volume.value)){
+      if(videoVolume!==volume.value&&!saveVideoVolume(volume.value,false))throw Error('本機音量儲存失敗。');
+      applied.push('videoVolume');
+    }
+    if(JSON.stringify(document.downloadDeleted)!==JSON.stringify(downloadDeleted))saveDownloadDeleted(document.downloadDeleted);
     if(JSON.stringify(document.downloadHistory)!==JSON.stringify(downloadHistory))saveDownloadHistory(document.downloadHistory,false);
-    for(const [key,field] of Object.entries(document.fields))syncMeta.fields[key]={at:field.at,device:field.device};
+    for(const key of applied){const field=document.fields[key];syncMeta.fields[key]={at:field.at,device:field.device};}
     if(JSON.stringify(GM_getValue(SYNC_META_KEY,{}))!==JSON.stringify(syncMeta))GM_setValue(SYNC_META_KEY,syncMeta);syncUI();mediaDownloader?.update();
+  }
+  function syncPendingCSSUI(){
+    const box=$('#css-pending');box.hidden=!pendingCSS;
+    if(!pendingCSS)return;
+    $('#css-pending-state').textContent=`另一部裝置在 ${new Date(pendingCSS.at).toLocaleString()} 更新了自訂 CSS（${pendingCSS.value.length} 字元）。自訂 CSS 會直接套用到 X 頁面，請先確認內容。`;
+    if($('#css-pending-text').textContent!==pendingCSS.value)$('#css-pending-text').textContent=pendingCSS.value;
+  }
+  $('#css-accept').addEventListener('click',event=>{
+    if(!event.isTrusted||!pendingCSS)return;
+    const accepted=pendingCSS;pendingCSS=null;
+    if(commit({...settings,customCSS:accepted.value},'',false)){
+      syncMeta.fields.customCSS={at:accepted.at,device:accepted.device};
+      try{GM_setValue(SYNC_META_KEY,syncMeta);}catch{}
+      status('已套用雲端的自訂 CSS。');
+    }
+    syncPendingCSSUI();
+  });
+  $('#css-keep').addEventListener('click',event=>{
+    if(!event.isTrusted||!pendingCSS)return;
+    const rejected=pendingCSS;pendingCSS=null;
+    // A stamp newer than the cloud copy makes this device's stylesheet win the next merge everywhere.
+    syncMeta.fields.customCSS={at:Math.max(Date.now(),rejected.at+1,...Object.values(syncMeta.fields).map(stamp=>stamp.at+1)),device:syncMeta.device};
+    try{GM_setValue(SYNC_META_KEY,syncMeta);}catch{}
+    syncPendingCSSUI();syncController?.changed();status('已保留本機的自訂 CSS，下次同步會覆蓋雲端版本。');
+  });
+  const SYNC_URL_LABEL={drive:'Apps Script 的 /exec 網址',webdav:'同步 JSON 檔案的完整網址（資料夾需已存在）'};
+  // Unsaved edits in the connection form survive status updates; saving or switching services reloads it.
+  let syncFormDirty=false,syncFormProvider='';
+  for(const id of ['#sync-url','#sync-key','#sync-user','#sync-password'])$(id).addEventListener('input',()=>{syncFormDirty=true;});
+  function syncFormUI(){
+    const provider=syncConfig.provider,entry=syncConfig[provider];
+    $('#sync-url-label').textContent=SYNC_URL_LABEL[provider];
+    for(const field of shadow.querySelectorAll('[data-sync-provider]'))field.hidden=field.dataset.syncProvider!==provider;
+    if(syncFormProvider!==provider){syncFormProvider=provider;syncFormDirty=false;clearSecretFields();}
+    if(!syncFormDirty){$('#sync-url').value=entry.url;$('#sync-user').value=syncConfig.webdav.user;}
+    $('#sync-key').placeholder=syncConfig.drive.key?'已儲存；留白保留目前的密鑰':'貼上 configureSync 產生的密鑰';
+    $('#sync-password').placeholder=syncConfig.webdav.password?'已儲存；留白保留目前的密碼':'WebDAV 應用程式密碼';
   }
   function syncConnectionUI(){
     const provider=syncConfig.provider,entry=syncConfig[provider];
     $('#sync-provider').value=provider;$('#sync-auto').checked=syncConfig.auto;
     $('#sync-connection').textContent=entry.url?`已設定 ${provider==='drive'?'Google Drive':'WebDAV'} · ${new URL(entry.url).host}`:'尚未設定連線。';
     $('#sync-state').textContent=syncMessage||(syncConfig.lastSuccess?`上次同步：${new Date(syncConfig.lastSuccess).toLocaleString()}`:'尚未同步。');
+    syncFormUI();
   }
   function persistSyncConfig(next){
     try{GM_setValue(SYNC_CONFIG_KEY,next);syncConfig=next;syncMessage='';syncConnectionUI();return true;}
     catch{syncMessage='同步連線設定儲存失敗。';syncConnectionUI();return false;}
   }
-  function configureSync(){
+  // Reads the connection form. Empty secret fields keep the saved secret for the same address.
+  function connectionFromForm(){
     const provider=syncConfig.provider,old=syncConfig[provider];
-    const answer=prompt(provider==='drive'?'Google Drive：貼上配套 Apps Script 的 /exec 網址。':'WebDAV：輸入同步 JSON 檔案的完整網址（資料夾需已存在）。',old.url);
-    if(answer===null)return;
-    try{
-      const url=syncURL(answer.trim(),provider);let entry;
-      if(provider==='drive'){
-        const key=prompt('貼上 Apps Script 產生的同步密鑰。留白可保留相同網址的既有密鑰。','');if(key===null)return;
-        const secret=key||url===old.url&&old.key;
-        if(typeof secret!=='string'||secret.length<32||secret.length>256)throw Error('同步密鑰需要 32–256 個字元。');
-        entry={url,key:secret};
-      }else{
-        const user=prompt('WebDAV 使用者名稱。',old.user);if(user===null)return;
-        const password=prompt('WebDAV 應用程式密碼。留白可保留相同網址及使用者的既有密碼。','');if(password===null)return;
-        const secret=password||url===old.url&&user===old.user&&old.password;
-        if(!user||user.length>256||user.includes(':')||typeof secret!=='string'||!secret||secret.length>2048)throw Error('請輸入有效的 WebDAV 帳號與應用程式密碼。');
-        entry={url,user,password:secret};
-      }
-      persistSyncConfig({...syncConfig,auto:false,[provider]:entry,lastSuccess:0});
-    }catch(error){syncMessage=error.message;syncConnectionUI();}
+    const url=syncURL($('#sync-url').value.trim(),provider);
+    if(provider==='drive'){
+      const secret=$('#sync-key').value.trim()||url===old.url&&old.key;
+      if(typeof secret!=='string'||secret.length<32||secret.length>256)throw Error('同步密鑰需要 32–256 個字元。');
+      return {provider,entry:{url,key:secret}};
+    }
+    const user=$('#sync-user').value.trim();
+    const secret=$('#sync-password').value||url===old.url&&user===old.user&&old.password;
+    if(!user||user.length>256||user.includes(':')||typeof secret!=='string'||!secret||secret.length>2048)throw Error('請輸入有效的 WebDAV 帳號與應用程式密碼。');
+    return {provider,entry:{url,user,password:secret}};
   }
+  function clearSecretFields(){$('#sync-key').value='';$('#sync-password').value='';}
   function createStorageSync(){
     let running=false,timer=0,dirty=false,retryAt=0,failures=0,cache=null;
     function request(details){
@@ -2321,7 +2577,27 @@
     }
     function changed(){if(running)dirty=true;if(!syncConfig.auto)return;clearTimeout(timer);timer=setTimeout(()=>{timer=0;run();},1500);}
     $('#sync-provider').addEventListener('change',event=>{if(!event.isTrusted){syncConnectionUI();return;}persistSyncConfig({...syncConfig,provider:event.target.value==='webdav'?'webdav':'drive',auto:false,lastSuccess:0});});
-    $('#sync-configure').addEventListener('click',event=>{if(event.isTrusted)configureSync();});
+    function saveConnection(){
+      try{
+        const {provider,entry}=connectionFromForm();
+        syncFormDirty=false;
+        if(persistSyncConfig({...syncConfig,auto:false,[provider]:entry,lastSuccess:0})){clearSecretFields();cache=null;syncMessage='已儲存連線。按「測試連線」或「立即同步」確認設定。';syncConnectionUI();}
+      }catch(error){syncMessage=error.message;syncConnectionUI();}
+    }
+    $('#sync-save').addEventListener('click',event=>{if(event.isTrusted)saveConnection();});
+    $('#sync-test').addEventListener('click',async event=>{
+      if(!event.isTrusted)return;
+      const button=$('#sync-test');
+      try{
+        const {provider,entry}=connectionFromForm();
+        button.disabled=true;syncMessage='正在測試連線…';syncConnectionUI();
+        const remote=await read({...syncConfig,provider,[provider]:entry},null);
+        if(remote.data!==null)normalizeSyncDocument(remote.data);
+        syncMessage=remote.data===null?'連線成功；雲端還沒有同步資料，第一次同步時會建立。':'連線成功，雲端資料可以讀取。';
+      }catch(error){syncMessage=`測試失敗：${error.message}`;}
+      finally{button.disabled=false;syncConnectionUI();}
+    });
+    for(const id of ['#sync-url','#sync-key','#sync-user','#sync-password'])$(id).addEventListener('keydown',event=>{if(event.key==='Enter'&&event.isTrusted){event.preventDefault();saveConnection();}});
     $('#sync-auto').addEventListener('change',event=>{if(!event.isTrusted){syncConnectionUI();return;}if(event.target.checked&&!syncConfig[syncConfig.provider].url){syncMessage='請先設定同步連線。';syncConnectionUI();return;}if(persistSyncConfig({...syncConfig,auto:event.target.checked}))changed();});
     $('#sync-now').addEventListener('click',event=>{if(event.isTrusted)run(true);});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)changed();});
@@ -2362,7 +2638,7 @@
     }
     return out;
   }
-  function mergeDownloadHistory(a,b) {
+  function mergeDownloadHistory(a,b,deleted=downloadDeleted) {
     const out=normalizeDownloadHistory(a);
     for(const [id,post] of Object.entries(normalizeDownloadHistory(b))){
       const previous=out[id];
@@ -2370,14 +2646,41 @@
       for(const [url,file] of Object.entries(post.files))if(!previous.files[url]||file.downloadedAt>previous.files[url].downloadedAt)previous.files[url]=file;
       previous.total=Math.max(previous.total,post.total);
     }
-    return normalizeDownloadHistory(out);
+    return pruneDownloadHistory(normalizeDownloadHistory(out),deleted);
+  }
+  // Removal markers: "*" clears everything recorded before it, a post ID clears that post.
+  function normalizeDownloadDeleted(value) {
+    const entries=[];
+    if(value&&typeof value==='object'&&!Array.isArray(value))for(const [id,at] of Object.entries(value))if((id==='*'||/^\d{1,25}$/.test(id))&&Number.isSafeInteger(at)&&at>0)entries.push([id,at]);
+    const all=entries.find(([id])=>id==='*')?.[1]||0;
+    const posts=entries.filter(([id,at])=>id!=='*'&&at>all).sort((x,y)=>y[1]-x[1]||x[0].localeCompare(y[0])).slice(0,5000);
+    const out=Object.create(null);
+    if(all)out['*']=all;
+    for(const [id,at] of posts.sort((x,y)=>x[0].localeCompare(y[0])))out[id]=at;
+    return out;
+  }
+  function mergeDownloadDeleted(a,b) {
+    const out={...normalizeDownloadDeleted(a)};
+    for(const [id,at] of Object.entries(normalizeDownloadDeleted(b)))out[id]=Math.max(out[id]||0,at);
+    return normalizeDownloadDeleted(out);
+  }
+  function pruneDownloadHistory(history,deleted) {
+    const all=deleted['*']||0,out=Object.create(null);
+    for(const [id,post] of Object.entries(history)){
+      const limit=Math.max(all,deleted[id]||0);
+      if(!limit){out[id]=post;continue;}
+      const files=Object.create(null);
+      for(const [url,file] of Object.entries(post.files))if(file.downloadedAt>limit)files[url]=file;
+      if(Object.keys(files).length)out[id]={...post,files};
+    }
+    return out;
   }
   let historyLimit=50,renderedHistory=null,renderedLimit=0;
   function syncDownloadHistoryUI(){
     if(renderedHistory===downloadHistory&&renderedLimit===historyLimit)return;
     renderedHistory=downloadHistory;renderedLimit=historyLimit;
     const posts=Object.entries(downloadHistory).map(([id,post])=>({id,...post,count:Object.keys(post.files).length,at:Math.max(...Object.values(post.files).map(file=>file.downloadedAt))})).sort((a,b)=>b.at-a.at||a.id.localeCompare(b.id));
-    $('#download-summary').textContent=posts.length?`已記錄 ${posts.length} 則貼文、${posts.reduce((sum,post)=>sum+post.count,0)} 個媒體。`:'尚無下載紀錄；從這版開始記錄成功下載的媒體。';
+    $('#download-summary').textContent=posts.length?`已記錄 ${posts.length} 則貼文、${posts.reduce((sum,post)=>sum+post.count,0)} 個媒體。`:'尚無下載紀錄。';
     const list=$('#download-history'),fragment=document.createDocumentFragment();
     for(const post of posts.slice(0,historyLimit)){
       const row=document.createElement('li'),link=document.createElement('a'),detail=document.createElement('span');
@@ -2388,9 +2691,21 @@
       for(const file of Object.values(post.files).sort((a,b)=>a.index-b.index)){
         const item=document.createElement('li');item.textContent=`${file.name} · ${new Date(file.downloadedAt).toLocaleString()}`;names.append(item);
       }
-      row.append(link,detail,files);fragment.append(row);
+      const remove=document.createElement('button');remove.type='button';remove.className='history-remove';remove.textContent='移除這筆紀錄';
+      remove.setAttribute('aria-label',`移除 @${post.author} 貼文 ${post.id} 的下載紀錄`);
+      remove.addEventListener('click',event=>{if(event.isTrusted)removeDownloads(post.id);});
+      row.append(link,detail,files,remove);fragment.append(row);
     }
-    list.replaceChildren(fragment);$('#history-more').hidden=posts.length<=historyLimit;
+    list.replaceChildren(fragment);$('#history-more').hidden=posts.length<=historyLimit;$('#history-clear').hidden=!posts.length;
+  }
+  function saveDownloadDeleted(next){
+    downloadDeleted=mergeDownloadDeleted(mergeDownloadDeleted(downloadDeleted,GM_getValue(DOWNLOAD_DELETED_KEY,{})),next);
+    try{GM_setValue(DOWNLOAD_DELETED_KEY,downloadDeleted);}catch{throw Error('下載紀錄的移除標記儲存失敗；請檢查 Tampermonkey storage 空間。');}
+    const pruned=pruneDownloadHistory(downloadHistory,downloadDeleted);
+    if(JSON.stringify(pruned)!==JSON.stringify(downloadHistory)){
+      downloadHistory=pruned;
+      try{GM_setValue(DOWNLOAD_KEY,downloadHistory);}catch{throw Error('下載紀錄儲存失敗；請檢查 Tampermonkey storage 空間。');}
+    }
   }
   function saveDownloadHistory(next,notify=true){
     const merged=mergeDownloadHistory(mergeDownloadHistory(downloadHistory,GM_getValue(DOWNLOAD_KEY,{})),next);
@@ -2398,6 +2713,18 @@
     try{GM_setValue(DOWNLOAD_KEY,merged);}catch{syncDownloadHistoryUI();throw Error('媒體已下載，但紀錄儲存失敗；請檢查 Tampermonkey storage 空間。');}
     syncDownloadHistoryUI();if(notify)syncController?.changed();return merged;
   }
+  function removeDownloads(id){
+    const posts=id==='*'?Object.values(downloadHistory):[downloadHistory[id]].filter(Boolean);
+    const newest=Math.max(0,...posts.flatMap(post=>Object.values(post.files).map(file=>file.downloadedAt)));
+    try{
+      saveDownloadDeleted({[id]:Math.max(Date.now(),newest+1)});
+      status(id==='*'?'已清空下載紀錄。':'已移除這筆下載紀錄。');
+    }catch(error){status(error.message||'移除下載紀錄失敗。',true);}
+    syncDownloadHistoryUI();mediaDownloader?.update();syncController?.changed();
+  }
+  $('#history-clear').addEventListener('click',event=>{
+    if(event.isTrusted&&confirm(`清空全部下載紀錄？已下載的檔案不受影響，之後再按下載會重新下載。${syncConfig.auto?'\n\n已開啟自動同步，其他裝置的紀錄也會一併清空。':''}`))removeDownloads('*');
+  });
   function rememberDownload(post,item,name,total){
     const url=canonicalMedia(item.url);
     if(!url)throw Error('媒體已下載，但無法記錄這個媒體網址。');
@@ -2463,7 +2790,7 @@
         event.preventDefault();event.stopPropagation();
         if(busy||!getEnabled())return;
         const current=postMedia(article);if(!current)return;
-        button.removeAttribute('data-xm-download-error');
+        button.removeAttribute('data-xm-download-error');setIcon(button,ICON_DOWNLOAD);
         busy=true;button.disabled=true;button.setAttribute('aria-busy','true');
         output.textContent='…';button.title='正在讀取媒體…';
         let completed=0;
@@ -2479,26 +2806,36 @@
           output.textContent='✓';
         }catch(error){
           button.setAttribute('data-xm-download-error','');
-          output.textContent='重試';button.title=`${completed?`已下載 ${completed} 個；`:''}${error.message}`;
-          button.setAttribute('aria-label',`${button.title} 按一下重試下載。`);
+          output.textContent='!';button.title=`${completed?`已下載 ${completed} 個；`:''}${error.message}按一下重試。`;
+          button.setAttribute('aria-label',`下載失敗：${button.title}`);
         }finally{busy=false;button.disabled=false;button.removeAttribute('aria-busy');decorate(button,current);}
       });
       return button;
     }
+    const ICON_DOWNLOAD='M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17V3ZM4 16h2v4h12v-4h2v6H4v-6Z';
+    const ICON_DONE='m9.5 18.5-6-6L5 11l4.5 4.5L20 5l1.5 1.5z';
+    const ICON_ERROR='M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-1 3h2v7h-2V7Zm0 9h2v2h-2v-2Z';
+    function setIcon(button,shape){const path=button.querySelector('svg path');if(path&&path.getAttribute('d')!==shape)path.setAttribute('d',shape);}
     function decorate(button,post){
-      if(button.disabled||button.hasAttribute('data-xm-download-error'))return;
+      if(button.disabled)return;
+      const output=button.querySelector('.xm-media-result');
+      if(button.hasAttribute('data-xm-download-error')){setIcon(button,ICON_ERROR);return;}
       const saved=downloadHistory[post.id];
-      if(!saved)return;
+      if(!saved){
+        setIcon(button,ICON_DOWNLOAD);button.removeAttribute('data-xm-downloaded');button.removeAttribute('data-xm-download-partial');
+        button.title='下載這則貼文的所有媒體';button.setAttribute('aria-label','下載媒體');
+        if(output.textContent)output.textContent='';
+        return;
+      }
       const count=new Set(Object.values(saved.files).map(file=>file.index)).size;
       const done=count>=saved.total;
-      const path=button.querySelector('svg path');
-      const shape=done?'m9.5 18.5-6-6L5 11l4.5 4.5L20 5l1.5 1.5z':'M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17V3ZM4 16h2v4h12v-4h2v6H4v-6Z';
-      if(path.getAttribute('d')!==shape)path.setAttribute('d',shape);
+      setIcon(button,done?ICON_DONE:ICON_DOWNLOAD);
       button.toggleAttribute('data-xm-downloaded',done);
+      button.toggleAttribute('data-xm-download-partial',!done);
       button.title=done?`已下載 ${count} 個媒體；按住 Shift 再按可重新下載。`:`已下載 ${count}/${saved.total} 個媒體；點擊繼續下載。`;
       button.setAttribute('aria-label',button.title);
-      const output=button.querySelector('.xm-media-result');
-      if(done&&output.textContent!=='✓')output.textContent='✓';
+      const text=done?'✓':`${count}/${saved.total}`;
+      if(output.textContent!==text)output.textContent=text;
     }
     function update(){
       if(!getEnabled()){for(const button of document.querySelectorAll(ACTION))button.remove();return;}
@@ -2533,10 +2870,10 @@
   function syncSidebarLiquidUI(){
     $('[data-key="sidebarLite"]').checked=sidebarLiteActive();
     const names={webgl:'完整折射',blur:'毛玻璃',solid:'實色背景',off:'未顯示'};
-    $('#sidebar-liquid-state').textContent=sidebarLiquids.map(effect=>{
+    $('#sidebar-liquid-state').textContent=(!settings.background?'兩側：設定背景圖片後才會套用折射':sidebarLiquids.map(effect=>{
       const state=sidebarStates.get(effect.kind);
-      return `${effect.label}：${!settings.background?'請先設定背景圖片':names[state?.renderer||'off']}${state?.reason?' · '+state.reason:''}`;
-    }).join('；')+([...interfaceGlass.values()].some(record=>['blur','solid'].includes(record.state?.renderer))?'；浮窗／分頁：輕量模式':'');
+      return `${effect.label}：${names[state?.renderer||'off']}${state?.reason?' · '+state.reason:''}`;
+    }).join('；'))+([...interfaceGlass.values()].some(record=>['blur','solid'].includes(record.state?.renderer))?'；浮窗／分頁：輕量模式':'');
   }
   liquid=createLiquidGlass(()=>settings,()=>navImage,()=>themeRGB,state=>{
     const reason=state.reason;
@@ -2614,7 +2951,7 @@
       if(!record){
         record={state:null,controller:null};interfaceGlass.set(element,record);
         const radius=parseFloat(getComputedStyle(element).borderTopLeftRadius)||0;
-        record.controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,opacity:floating?Math.max(68,settings.sidebarOpacity):settings.sidebarOpacity,blur:floating?Math.max(12,settings.sidebarBlur):settings.sidebarBlur}),()=>navImage,()=>themeRGB,state=>{
+        record.controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,opacity:element===dialog?Math.max(92,settings.sidebarOpacity):floating?Math.max(80,settings.sidebarOpacity):settings.sidebarOpacity,blur:floating?Math.max(12,settings.sidebarBlur):settings.sidebarBlur}),()=>navImage,()=>themeRGB,state=>{
           record.state=state;mark(element,'glass-renderer',state.renderer);syncSidebarLiquidUI();
         },{id:`xm-liquid-ui-${++interfaceGlassId}`,performanceKey:'x-minimal-ui-liquid-performance',inset:0,radius,local:true,zIndex:-1,compactEdges:true,highlight:!element.hasAttribute('data-xm-composer')});
       }
