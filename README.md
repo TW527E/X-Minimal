@@ -7,7 +7,7 @@
 ## 安裝
 
 1. 在瀏覽器安裝 [Tampermonkey](https://www.tampermonkey.net/)。
-2. 安裝 [X 極簡腳本](https://raw.githubusercontent.com/TW527E/X-Minimal/main/x-minimal.user.js)。若使用其他 X 主題擴充套件，先暫停它，避免樣式重疊。
+2. 在 [Greasy Fork](https://greasyfork.org/zh-TW/scripts/604326) 安裝 X 極簡。若使用其他 X 主題擴充套件，先暫停它，避免樣式重疊。
 3. 重新整理 X，點左側的「介面設定」，或從 Tampermonkey 選單選「X 極簡設定」。窄視窗的入口在左下角。
 
 主要在 Vivaldi 與 Chromium 驗證。X 的新版介面會分批推出，頁面改版後可能需要更新腳本。macOS 的 Vivaldi／Chrome 可使用同一份腳本，Safari 的實機相容性仍待驗證。
