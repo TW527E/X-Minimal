@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.12.2
+// @version      1.12.3
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -86,11 +86,11 @@
     hideGrok: true, hideChatDrawer: false, hideSearch: false, hidePremiumUpsell: false, transparentSearch: false,
     hidePostButton: false, hideTitleCount: false, systemFont: false,
     background: '', backgroundFit: 'cover', backgroundPosition: 'center', backgroundDim: 12,
-    timelineMode: 'solid', liquidLite: false, opacity: 78, blur: 20, customCSS: '',
+    timelineMode: 'solid', liquidLite: false, liquidTier: 'auto', opacity: 78, blur: 20, customCSS: '',
     rememberVideoVolume: true, balanceVideoAudio: true, mediaDownloadEnabled: true,
     fixupCopy: true, hideNativeCopyLink: false,
     navAlignLeft: false, rightAlignSidebar: false, readingTextTone: 'auto',
-    sidebarMode: 'liquid', sidebarOpacity: 42, sidebarBlur: 20, sidebarLite: false, magneticCursor: false
+    sidebarMode: 'liquid', sidebarOpacity: 42, sidebarBlur: 20, sidebarLite: false, sidebarTier: 'auto', magneticCursor: false
   };
 
   function imageValue(value) {
@@ -114,6 +114,12 @@
     }
     for (const [key, allowed] of Object.entries({navLabels:['always','hover','hidden'], timelineMode:['solid','glass','liquid'], sidebarMode:['solid','glass','liquid'], backgroundFit:['cover','contain','repeat'], backgroundPosition:['center','top','bottom'],readingTextTone:['auto','light','dark']})) {
       if (allowed.includes(value[key])) result[key] = value[key];
+    }
+    // 輕量模式 is the second tier; older versions only know the boolean, so a change there wins.
+    for (const [tier, lite] of [['liquidTier', 'liquidLite'], ['sidebarTier', 'sidebarLite']]) {
+      if (['auto','full','move','lite'].includes(value[tier])) result[tier] = value[tier];
+      if (result[lite] !== (result[tier] === 'lite')) result[tier] = result[lite] ? 'lite' : result[tier] === 'lite' ? 'auto' : result[tier];
+      result[lite] = result[tier] === 'lite';
     }
     if (Array.isArray(value.navHidden)) result.navHidden = NAV.map(n => n[0]).filter(key => key !== 'more' && value.navHidden.includes(key));
     result.background = imageValue(value.background);
@@ -273,7 +279,7 @@
           <label class="field slider">背景壓暗<span class="range"><input type="range" data-key="backgroundDim" min="0" max="80" step="1"><output></output></span></label>
           <h3 class="group-label">時間線</h3>
           <fieldset class="choice"><legend>時間線背景</legend><label class="option"><span>保留實色背景</span><input type="radio" name="timelineMode" data-key="timelineMode" value="solid"></label><label class="option"><span>高斯模糊／毛玻璃</span><input type="radio" name="timelineMode" data-key="timelineMode" value="glass"></label><label class="option"><span><span>Liquid Glass</span><small>與導覽相同的折射效果</small></span><input type="radio" name="timelineMode" data-key="timelineMode" value="liquid"></label></fieldset>
-          <div class="fields" id="liquid-options" hidden><label class="row"><span><span>輕量模式</span><small>停用折射，只保留模糊</small></span><input type="checkbox" data-key="liquidLite" aria-describedby="liquid-state"></label><p class="note" id="liquid-state" role="status"></p></div>
+          <div class="fields" id="liquid-options" hidden><fieldset class="choice" aria-describedby="liquid-state"><legend>效能</legend><label class="option"><span><span>自動</span><small>不夠流暢時依序降到第一層、第二層</small></span><input type="radio" name="liquidTier" data-key="liquidTier" value="auto"></label><label class="option"><span><span>永不降級</span><small>一律完整折射，捲動時也照常繪製</small></span><input type="radio" name="liquidTier" data-key="liquidTier" value="full"></label><label class="option"><span><span>第一層</span><small>玻璃移動時暫時隱藏折射邊，停下後恢復</small></span><input type="radio" name="liquidTier" data-key="liquidTier" value="move"></label><label class="option"><span><span>第二層</span><small>停用折射，只保留模糊</small></span><input type="radio" name="liquidTier" data-key="liquidTier" value="lite"></label></fieldset><p class="note" id="liquid-state" role="status"></p></div>
           <label class="field slider" data-glass>毛玻璃不透明度<span class="range"><input type="range" data-key="opacity" min="15" max="100" step="1"><output></output></span></label>
           <label class="field slider" data-glass>高斯模糊強度<span class="range"><input type="range" data-key="blur" min="0" max="60" step="1"><output></output></span></label>
           <label class="field slider">時間線寬度<span class="range"><input type="range" data-key="width" min="480" max="1100" step="10"><output></output></span></label>
@@ -281,7 +287,7 @@
         </div></section>
         <section data-toc="顯示效果" data-icon="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v5M16.5 18.5h5"><h2>顯示效果</h2><p class="description">導覽、分頁與浮窗獨立於時間線，使用同款 Liquid Glass 折射。</p><div class="fields" id="effects">
           <fieldset class="choice"><legend>側欄、分頁與浮窗背景</legend><label class="option"><span><span>Liquid Glass</span><small>同款折射</small></span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="liquid"></label><label class="option"><span>高斯模糊／毛玻璃</span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="glass"></label><label class="option"><span>實色背景</span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="solid"></label></fieldset>
-          <div class="fields" id="sidebar-liquid-options"><label class="row"><span><span>介面輕量模式</span><small>停用折射，只保留模糊</small></span><input type="checkbox" data-key="sidebarLite" aria-describedby="sidebar-liquid-state"></label><p class="note" id="sidebar-liquid-state" role="status"></p></div>
+          <div class="fields" id="sidebar-liquid-options"><fieldset class="choice" aria-describedby="sidebar-liquid-state"><legend>效能</legend><label class="option"><span><span>自動</span><small>不夠流暢時依序降到第一層、第二層</small></span><input type="radio" name="sidebarTier" data-key="sidebarTier" value="auto"></label><label class="option"><span><span>永不降級</span><small>一律完整折射，捲動時也照常繪製</small></span><input type="radio" name="sidebarTier" data-key="sidebarTier" value="full"></label><label class="option"><span><span>第一層</span><small>玻璃移動時暫時隱藏折射邊，停下後恢復</small></span><input type="radio" name="sidebarTier" data-key="sidebarTier" value="move"></label><label class="option"><span><span>第二層</span><small>停用折射，只保留模糊</small></span><input type="radio" name="sidebarTier" data-key="sidebarTier" value="lite"></label></fieldset><p class="note" id="sidebar-liquid-state" role="status"></p></div>
           <label class="field slider" data-sidebar-glass>介面不透明度<span class="range"><input type="range" data-key="sidebarOpacity" min="15" max="100" step="1"><output></output></span></label>
           <label class="field slider" data-sidebar-glass>介面模糊強度<span class="range"><input type="range" data-key="sidebarBlur" min="0" max="60" step="1"><output></output></span></label>
           <h3 class="group-label">游標</h3>
@@ -447,7 +453,7 @@
   function syncUI() {
     for (const input of shadow.querySelectorAll('[data-key]')) {
       const value = settings[input.dataset.key];
-      if (input.type === 'checkbox') input.checked = value || input.dataset.key==='liquidLite'&&['blur','solid'].includes(root.dataset.xmLiquid)||input.dataset.key==='sidebarLite'&&sidebarLiteActive();
+      if (input.type === 'checkbox') input.checked = value;
       else if (input.type === 'radio') input.checked = String(value) === input.value;
       else if (input !== shadow.activeElement) input.value = value;
       if (input.type === 'range') input.nextElementSibling.textContent = `${value}${['blur','sidebarBlur','width'].includes(input.dataset.key) ? ' px' : '%'}`;
@@ -478,8 +484,8 @@
     try { GM_setValue(KEY, clean); }
     catch (error) { status(`儲存失敗：${error.message || '請檢查 Tampermonkey storage 可用空間。'}`, true); syncUI(); return false; }
     if(track)markSyncFields(settings,clean);
-    const resetLiquid=retryEffect==='timeline'||clean.liquidLite!==settings.liquidLite||(clean.timelineMode==='liquid'&&settings.timelineMode!=='liquid');
-    const resetSidebar=retryEffect==='sidebar'||clean.sidebarLite!==settings.sidebarLite||(clean.sidebarMode==='liquid'&&settings.sidebarMode!=='liquid');
+    const resetLiquid=retryEffect==='timeline'||clean.liquidTier!==settings.liquidTier||(clean.timelineMode==='liquid'&&settings.timelineMode!=='liquid');
+    const resetSidebar=retryEffect==='sidebar'||clean.sidebarTier!==settings.sidebarTier||(clean.sidebarMode==='liquid'&&settings.sidebarMode!=='liquid');
     settings = clean; storageError = '';if(resetLiquid)liquid?.resetPerformance();if(resetSidebar){for(const effect of sidebarLiquids)effect.controller.resetPerformance();for(const record of interfaceGlass.values())record.controller.resetPerformance();}apply(); refresh(); updateVideoAudio();syncUI();if(track)syncController?.changed();status('已儲存至 Tampermonkey');return true;
   }
   // Motion Prompt #049 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#049
@@ -501,7 +507,7 @@
   shadow.querySelector('form').addEventListener('submit', event => event.preventDefault());
   shadow.addEventListener('change', event => {
     const input = event.target;
-    if (input.dataset.key) commit({...settings,[input.dataset.key]:input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value},!input.checked?(input.dataset.key==='liquidLite'?'timeline':input.dataset.key==='sidebarLite'?'sidebar':''):'');
+    if (input.dataset.key) commit({...settings,[input.dataset.key]:input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value,...input.dataset.key==='liquidTier'?{liquidLite:input.value==='lite'}:input.dataset.key==='sidebarTier'?{sidebarLite:input.value==='lite'}:{}});
     if (input.dataset.nav) commit({...settings,navHidden:[...shadow.querySelectorAll('[data-nav]:not(:checked)')].map(i=>i.dataset.nav)});
   });
   shadow.addEventListener('input', event => {
@@ -1529,7 +1535,7 @@
   document.addEventListener('load',event=>{if(event.target instanceof HTMLImageElement&&event.target.src.includes('pbs.twimg.com/'))schedule();},true);
   if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('X 極簡設定',openSettings);
   if(typeof GM_addValueChangeListener==='function'){
-    GM_addValueChangeListener(KEY,(_key,_old,value,remote)=>{if(remote){imageRequest++;const next=normalize(value),reset=next.liquidLite!==settings.liquidLite,resetSidebar=next.sidebarLite!==settings.sidebarLite;settings=next;if(reset)liquid?.resetPerformance();if(resetSidebar){for(const effect of sidebarLiquids)effect.controller.resetPerformance();for(const record of interfaceGlass.values())record.controller.resetPerformance();}apply();refresh();updateVideoAudio();syncUI();}});
+    GM_addValueChangeListener(KEY,(_key,_old,value,remote)=>{if(remote){imageRequest++;const next=normalize(value),reset=next.liquidTier!==settings.liquidTier,resetSidebar=next.sidebarTier!==settings.sidebarTier;settings=next;if(reset)liquid?.resetPerformance();if(resetSidebar){for(const effect of sidebarLiquids)effect.controller.resetPerformance();for(const record of interfaceGlass.values())record.controller.resetPerformance();}apply();refresh();updateVideoAudio();syncUI();}});
     GM_addValueChangeListener(SYNC_META_KEY,(_key,_old,value,remote)=>{if(remote){for(const [key,stamp] of Object.entries(value?.fields||{})){const old=syncMeta.fields[key];if([...Object.keys(DEFAULTS),'videoVolume'].includes(key)&&Number.isSafeInteger(stamp?.at)&&stamp.at>=0&&typeof stamp.device==='string'&&/^[-\w]{0,80}$/.test(stamp.device)&&(!old||stamp.at>old.at||stamp.at===old.at&&stamp.device>old.device))syncMeta.fields[key]={at:stamp.at,device:stamp.device};}syncController?.changed();}});
     GM_addValueChangeListener(SYNC_CONFIG_KEY,(_key,_old,_value,remote)=>{if(remote){const old=syncConfig;syncConfig=loadSyncConfig();syncMessage='';syncConnectionUI();if(old.provider!==syncConfig.provider||old.auto!==syncConfig.auto||JSON.stringify(old[old.provider])!==JSON.stringify(syncConfig[syncConfig.provider]))syncController?.changed();}});
     GM_addValueChangeListener(DOWNLOAD_KEY,(_key,_old,value,remote)=>{if(remote){const merged=mergeDownloadHistory(downloadHistory,value);downloadHistory=merged;try{if(JSON.stringify(merged)!==JSON.stringify(normalizeDownloadHistory(value)))GM_setValue(DOWNLOAD_KEY,merged);}catch{}syncDownloadHistoryUI();mediaDownloader?.update();}});
@@ -1819,8 +1825,8 @@
     let raf=0,scrollTimer=0,activeUntil=0,lastFrame=0,best=1000/60,strikes=0,samples=[],rimHidden=false,paintEdges='';
     const uniforms=new Map();
     function emit(renderer,reason=''){
-      const reasons={'not-visible':'此區域目前不在畫面內','context-lost':'WebGL 內容已中斷，暫用毛玻璃','reduced-transparency':'依系統減少透明度','forced-colors':'依系統高對比配色','backdrop-unavailable':'瀏覽器不支援背景模糊，使用實色','manual-lite':'已啟用輕量模式','performance-lite':'效能自動降級','image-unavailable':'背景圖片暫不可取樣，使用毛玻璃','image-security':'圖片未提供跨來源存取，使用毛玻璃','webgl-unavailable':'WebGL 暫不可用，使用毛玻璃'};
-      const state={renderer,reason:reasons[reason]||(reason?'WebGL 暫不可用，使用毛玻璃':''),fade:level===1||touch.matches||!chromium};
+      const reasons={'not-visible':'此區域目前不在畫面內','context-lost':'WebGL 內容已中斷，暫用毛玻璃','reduced-transparency':'依系統減少透明度','forced-colors':'依系統高對比配色','backdrop-unavailable':'瀏覽器不支援背景模糊，使用實色','manual-lite':'第二層：只保留模糊','performance-lite':'效能自動降級到第二層','manual-move':'第一層：移動時隱藏折射邊','performance-move':'效能自動降級到第一層','image-unavailable':'背景圖片暫不可取樣，使用毛玻璃','image-security':'圖片未提供跨來源存取，使用毛玻璃','webgl-unavailable':'WebGL 暫不可用，使用毛玻璃'};
+      const state={renderer,reason:reasons[reason]||(reason?'WebGL 暫不可用，使用毛玻璃':''),fade:hidesOnMove(getSettings())};
       const key=JSON.stringify(state);if(key!==lastState){lastState=key;onState(state);}
     }
     function ensureLayer(){
@@ -1975,35 +1981,39 @@
       layer.style.backdropFilter=filter;layer.style.setProperty('-webkit-backdrop-filter',filter);
       layer.style.backgroundColor=contrast.matches?'Canvas':`rgb(${theme.join(' ')} / ${solid?1:s.opacity/100})`;
       if(solid){if(gl)release();fallback('solid',reduce.matches?'reduced-transparency':contrast.matches?'forced-colors':'backdrop-unavailable');return;}
-      if(s.liquidLite||level>=2){if(gl)release();fallback('blur',s.liquidLite?'manual-lite':'performance-lite');return;}
+      if(s.liquidLite||tierLevel(s)>=2){if(gl)release();fallback('blur',s.liquidLite?'manual-lite':'performance-lite');return;}
       const image=getImage();if(!image?.naturalWidth){fallback('blur','image-unavailable');return;}
       if(blocked&&blockedImage!==image&&blocked!=='context-lost')blocked='';
       if(blocked){fallback('blur',blocked);return;}
-      try{prepareGL();prepareSource(image,s,theme);draw(rect,visible,s,theme);emit('webgl');}
+      try{prepareGL();prepareSource(image,s,theme);draw(rect,visible,s,theme);emit('webgl',tierLevel(s)===1?(tierOf(s)==='move'?'manual-move':'performance-move'):'');}
       catch(error){blocked=error.name==='SecurityError'?'image-security':error.message||'webgl-error';blockedImage=image;release();fallback('blur',blocked);}
     }
     function remember(){try{GM_setValue(PERF_KEY,{level,at:Date.now()});}catch{}}
     function downgrade(){level=Math.min(2,level+1);remember();samples=[];strikes=0;paintKey='';if(level===2)rimHidden=false;render();}
     function frame(now){
       raf=0;if(disposed||document.hidden)return;
-      if(lastFrame&&getSettings().timelineMode==='liquid'&&!getSettings().liquidLite&&gl&&!gl.isContextLost()&&level<2){
+      if(lastFrame&&getSettings().timelineMode==='liquid'&&tierOf(getSettings())==='auto'&&gl&&!gl.isContextLost()&&level<2){
         const delta=now-lastFrame;best=Math.min(best,delta);samples.push(delta);
         if(samples.length>=40){const limit=Math.max(20,best*1.7),slow=samples.filter(ms=>ms>limit).length/samples.length;samples=[];strikes=slow>.3?strikes+1:0;if(strikes>=2)downgrade();}
       }
       render();
-      if(performance.now()<activeUntil&&gl&&level<2){lastFrame=now;raf=requestAnimationFrame(frame);}else lastFrame=0;
+      if(performance.now()<activeUntil&&gl&&tierLevel(getSettings())<2){lastFrame=now;raf=requestAnimationFrame(frame);}else lastFrame=0;
     }
     function schedule(){if(disposed||raf||document.hidden)return;raf=requestAnimationFrame(frame);}
     function wake(){const s=getSettings();if(!s.enabled||s.timelineMode!=='liquid'||!s.background)return;activeUntil=performance.now()+200;schedule();}
     function scroll(){
       const s=getSettings();if(!s.enabled||s.timelineMode!=='liquid'||!s.background)return;
       // The lighter tier hides the edge only while it is actually moving; panels that stay put keep it.
-      if((touch.matches||!chromium||level===1)&&(rimHidden||gl&&paintKey&&target?.isConnected&&moved())){
+      if(hidesOnMove(s)&&(rimHidden||gl&&paintKey&&target?.isConnected&&moved())){
         rimHidden=true;if(canvas)canvas.style.opacity='0';clearTimeout(scrollTimer);
         scrollTimer=setTimeout(()=>{scrollTimer=0;rimHidden=false;paintKey='';render();if(canvas)canvas.style.opacity='1';},140);
       }
       wake();
     }
+    // 自動 follows the measured level; the other choices pin one. Touch and non-Chromium browsers start at the first tier unless 永不降級.
+    function tierOf(s){return s.tier??s.liquidTier??'auto';}
+    function tierLevel(s){return {full:0,move:1,lite:2}[tierOf(s)]??level;}
+    function hidesOnMove(s){const level=tierLevel(s);return level===1||level===0&&tierOf(s)==='auto'&&(touch.matches||!chromium);}
     function moved(){const {rect,visible}=measure();return edgeKey(rect,visible)!==paintEdges;}
     function pointer(event){if(event.pointerType==='mouse')wake();}
     function visibility(){lastFrame=0;samples=[];if(document.hidden){cancelAnimationFrame(raf);raf=0;}else schedule();}
@@ -3053,9 +3063,7 @@
   const sidebarStates=new Map(),sidebarLiquids=[],interfaceGlass=new Map();
   let interfaceGlassId=0;
   let interfacePaints=new Set();
-  function sidebarLiteActive(){return settings.sidebarLite||settings.sidebarMode==='liquid'&&[...sidebarStates.values(),...Array.from(interfaceGlass.values(),record=>record.state)].some(state=>state&&['blur','solid'].includes(state.renderer));}
   function syncSidebarLiquidUI(){
-    $('[data-key="sidebarLite"]').checked=sidebarLiteActive();
     const names={webgl:'完整折射',blur:'毛玻璃',solid:'實色背景',off:'未顯示'};
     $('#sidebar-liquid-state').textContent=(!settings.background?'兩側：設定背景圖片後才會套用折射':sidebarLiquids.map(effect=>{
       const state=sidebarStates.get(effect.kind);
@@ -3066,7 +3074,6 @@
     const reason=state.reason;
     root.dataset.xmLiquid=state.renderer;
     root.dataset.xmLiquidFade=String(state.fade);
-    $('[data-key="liquidLite"]').checked=settings.liquidLite||['blur','solid'].includes(state.renderer);
     const name={webgl:'完整折射',blur:'毛玻璃',solid:'實色背景',off:settings.background?'此頁面未套用效果':'請先選擇背景圖片'}[state.renderer];
     $('#liquid-state').textContent=`目前：${name}${reason?' · '+reason:''}`;
   });
@@ -3148,7 +3155,7 @@
       if(!record){
         record={state:null,controller:null,above:null};interfaceGlass.set(element,record);
         const radius=parseFloat(getComputedStyle(element).borderTopLeftRadius)||0;
-        record.controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,opacity:element===dialog?Math.max(92,settings.sidebarOpacity):floating?Math.max(80,settings.sidebarOpacity):settings.sidebarOpacity,blur:floating?Math.max(12,settings.sidebarBlur):settings.sidebarBlur}),()=>navImage,()=>themeRGB,state=>{
+        record.controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,tier:settings.sidebarTier,opacity:element===dialog?Math.max(92,settings.sidebarOpacity):floating?Math.max(80,settings.sidebarOpacity):settings.sidebarOpacity,blur:floating?Math.max(12,settings.sidebarBlur):settings.sidebarBlur}),()=>navImage,()=>themeRGB,state=>{
           record.state=state;mark(element,'glass-renderer',state.renderer);syncSidebarLiquidUI();
         },{id:`xm-liquid-ui-${++interfaceGlassId}`,performanceKey:'x-minimal-ui-liquid-performance',inset:0,radius,local:true,zIndex:-1,compactEdges:true,highlight:!element.hasAttribute('data-xm-composer'),extendTop:()=>{
           const upper=record.above;if(!upper?.isConnected)return 0;
@@ -3162,7 +3169,7 @@
     interfacePaints=nextPaints;syncSidebarLiquidUI();
   }
   for(const [kind,label,selector] of [['nav','左側','[data-xm-nav-panel]'],['right','右側','[data-xm-sidebar-surface]']]){
-    const controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,opacity:settings.sidebarOpacity,blur:settings.sidebarBlur}),()=>navImage,()=>{
+    const controller=createLiquidGlass(()=>({...settings,timelineMode:settings.sidebarMode,liquidLite:settings.sidebarLite,tier:settings.sidebarTier,opacity:settings.sidebarOpacity,blur:settings.sidebarBlur}),()=>navImage,()=>{
       const panel=document.querySelector(selector);
       return panel?(getComputedStyle(panel).getPropertyValue('--xm-rail-rgb').match(/[\d.]+/g)?.slice(0,3).map(Number)||themeRGB):themeRGB;
     },state=>{
