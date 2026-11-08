@@ -41,6 +41,9 @@ WebGL 折射改編自 [tw527e.zip](https://github.com/TW527E/tw527e.zip)，包�
 
 ## 發佈紀錄
 
+GitHub 的 `main` 分支是發佈來源。推送更新過版號的 `x-minimal.user.js` 後，GitHub 的 push Webhook 會通知 Greasy Fork 匯入腳本。Greasy Fork 的功能說明來自同一分支的 `greasyfork.md`。
+
+- **1.10.3** 首次正式公開發佈，補上專案連結、作者及跨裝置同步說明。
 - **1.10.2** 修正發文和行內回覆工具列的圖示，使其跟隨透明時間線的配色設定。
 - **1.10.1** 統一貼文頁行內回覆的輸入區和工具列背景。
 - **1.10.0** 新增媒體下載紀錄、跳過已下載項目，以及 Google Drive／WebDAV 跨裝置同步。

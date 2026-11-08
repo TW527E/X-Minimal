@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.10.2
-// @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載、影片音量記憶、音量平衡及繁體中文設定。
+// @version      1.10.3
+// @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
+// @author       TW527E
+// @homepageURL  https://github.com/TW527E/X-Minimal
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @match        https://www.x.com/*
