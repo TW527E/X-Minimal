@@ -12,6 +12,6 @@
 - **影片音量**　記住播放器音量，並可另外開啟本機音量平衡。滑桿保留低音量微調空間。
 - **備份與跨裝置同步**　設定平常存在 Tampermonkey。可匯出／匯入 JSON，也可自行連接 Google Drive 或 WebDAV，同步外觀、背景、音量和下載紀錄。雲端同步預設關閉；其他裝置同步來的自訂 CSS 需要確認才會套用。
 
-安裝後重新整理 X，點左側的「介面設定」，或從 Tampermonkey 選單選「X 極簡設定」。主要在 Vivaldi 與 Chromium 驗證。媒體下載使用 X 網頁 API 和 X CDN，需允許 Tampermonkey 的下載功能；備用來源為 `cdn.syndication.twimg.com`。
+安裝後重新整理 X，打開左側「更多」選單裡的「介面設定」，或從 Tampermonkey 選單選「X 極簡設定」。主要在 Vivaldi 與 Chromium 驗證。媒體下載使用 X 網頁 API 和 X CDN，需允許 Tampermonkey 的下載功能；備用來源為 `cdn.syndication.twimg.com`。
 
 [GitHub 原始碼與完整功能說明](https://github.com/TW527E/X-Minimal) · [跨裝置同步設定](https://github.com/TW527E/X-Minimal/blob/main/x-minimal-sync-guide.md) · [MIT 授權與署名](https://github.com/TW527E/X-Minimal/blob/main/LICENSE)

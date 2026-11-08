@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.11.0
+// @version      1.12.0
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -115,7 +115,7 @@
     for (const [key, allowed] of Object.entries({navLabels:['always','hover','hidden'], timelineMode:['solid','glass','liquid'], sidebarMode:['solid','glass','liquid'], backgroundFit:['cover','contain','repeat'], backgroundPosition:['center','top','bottom'],readingTextTone:['auto','light','dark']})) {
       if (allowed.includes(value[key])) result[key] = value[key];
     }
-    if (Array.isArray(value.navHidden)) result.navHidden = NAV.map(n => n[0]).filter(key => value.navHidden.includes(key));
+    if (Array.isArray(value.navHidden)) result.navHidden = NAV.map(n => n[0]).filter(key => key !== 'more' && value.navHidden.includes(key));
     result.background = imageValue(value.background);
     if (typeof value.customCSS === 'string') result.customCSS = value.customCSS.slice(0, 50000);
     return result;
@@ -146,7 +146,7 @@
 
   const host = document.createElement('div');
   host.id = 'xm-settings';
-  host.dataset.placement = 'fallback';
+  host.dataset.placement = 'menu';
   const shadow = host.attachShadow({mode:'open'});
   document.body.append(host);
   shadow.innerHTML = `
@@ -162,195 +162,283 @@
       :host([data-placement=nav]) #launcher{height:48px;min-height:48px;padding:12px 24px;gap:20px}:host([data-placement=nav][data-labels=hidden]) #launcher,:host([data-placement=nav][data-labels=hover]:not([data-nav-expanded])) #launcher{width:48px;max-width:48px;margin-inline:12px;justify-content:center;padding:12px}
       :host([data-placement=tabbar]){display:flex;flex:1 1 0;min-width:0;align-items:center;justify-content:center}
       :host([data-placement=tabbar]) #launcher{width:48px;height:48px;min-height:48px;padding:12px;justify-content:center;border-radius:999px}:host([data-placement=tabbar]) #launcher-label{display:none}
-      :host([data-placement=fallback]) #launcher{position:fixed;left:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:9999;background:var(--xm-panel,#fff);border:1px solid var(--xm-line,#ddd)}
-      dialog{width:min(900px,calc(100vw - 32px));max-height:90dvh;margin:auto;padding:0;border:1px solid var(--xm-line,#ddd);border-radius:16px;background:var(--xm-panel,#fff);color:var(--xm-text,#111);overscroll-behavior:contain}dialog[open]{display:flex;flex-direction:column;overflow:hidden}
-      dialog::backdrop{background:rgb(0 0 0 / .45)}header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:24px 28px 20px;background:var(--xm-panel);border-bottom:1px solid var(--xm-line)}
+      :host([data-placement=menu]) #launcher{display:none}
+
+      /* The settings dialog follows X's own settings modal: a category list on the left, one page at a time on the right. */
+      dialog{width:min(1120px,calc(100vw - 32px));height:min(680px,calc(100dvh - 48px));max-width:none;max-height:none;margin:auto;padding:0;border:1px solid var(--xm-line,#ddd);border-radius:16px;background:var(--xm-panel,#fff);color:var(--xm-text,#111);overscroll-behavior:contain;font:15px/20px TwitterChirp,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Noto Sans TC","PingFang TC",sans-serif;--xm-accent:#1d9bf0}
+      dialog[open]{display:flex;overflow:hidden}dialog::backdrop{background:rgb(0 0 0 / .45)}
       dialog[data-xm-ui-glass]{isolation:isolate;background:rgb(var(--xm-rgb) / max(.92,var(--xm-sidebar-opacity)));backdrop-filter:blur(var(--xm-sidebar-blur))}
       dialog[data-xm-ui-glass]:not([data-xm-glass-renderer="off"]){background:transparent;backdrop-filter:none}
       dialog[data-xm-ui-floating]{border-color:transparent}
-      dialog[data-xm-ui-glass]>header,dialog[data-xm-ui-glass]>footer{background:transparent}
       @media(forced-colors:active){dialog[data-xm-ui-glass]{background:Canvas}}
-      h1{font-size:24px;line-height:1.3;margin:0;font-weight:650}header p{margin:5px 0 0;color:var(--xm-muted);font-size:13px}#close{width:36px;height:36px;border:0;border-radius:50%;background:transparent;font-size:25px}#close:hover{background:var(--xm-hover)}
-      form{padding:0 28px;overflow:auto;overscroll-behavior:contain;min-height:0}header,footer{flex-shrink:0}section{display:grid;grid-template-columns:180px minmax(0,1fr);gap:24px;padding:24px 0;border-bottom:1px solid var(--xm-line)}
-      h2{font-size:16px;font-weight:600;margin:2px 0 6px}.description{font-size:13px;color:var(--xm-muted);margin:0}.fields{min-width:0;display:grid;gap:14px;align-content:start}
-      .row{display:flex;gap:16px;align-items:center;justify-content:space-between;min-height:28px}.row>span{flex:1}.row input[type=checkbox]{width:18px;height:18px;accent-color:var(--xm-text);flex:none}
+      small{display:block;font-size:13px;line-height:16px;color:var(--xm-muted)}
+      .icon-button{width:36px;height:36px;display:grid;place-items:center;padding:0;border:0;border-radius:9999px;background:transparent}.icon-button:hover{background:var(--xm-hover)}.icon-button svg{width:20px;height:20px}
+      #toc{width:320px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--xm-line)}
+      #toc-header{display:none;height:56px;flex:none;grid-template-columns:52px minmax(0,1fr) 52px;align-items:center;padding:0 8px}#toc-header h1{grid-column:2;margin:0;text-align:center;font-size:17px;line-height:20px;font-weight:700}#toc-close{grid-column:3;justify-self:end}
+      #search-box{display:flex;align-items:center;gap:10px;height:40px;flex:none;margin:16px 16px 8px;padding:0 14px;border:1px solid var(--xm-line);border-radius:9999px;color:var(--xm-muted);cursor:text}#search-box:focus-within{border-color:var(--xm-accent);box-shadow:0 0 0 1px var(--xm-accent)}#search-box svg{width:18px;height:18px;flex:none}
+      #search{flex:1;min-width:0;height:100%;padding:0;border:0;background:transparent;color:var(--xm-text);font-size:15px}#search:focus-visible{outline:0}#search::placeholder{color:var(--xm-muted)}
+      #toc-list{list-style:none;margin:0;padding:8px 8px 16px;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+      #toc-list li[data-divider]::before{content:"";display:block;height:1px;margin:8px 12px;background:var(--xm-line)}
+      #toc-list button{width:100%;height:48px;display:flex;align-items:center;gap:16px;padding:0 12px;border:0;border-radius:9999px;background:transparent;text-align:left;font-weight:500}#toc-list button:hover,#toc-list button[aria-current=page]{background:var(--xm-hover)}
+      #toc-list svg{width:20px;height:20px;flex:none}#toc-list span{flex:1;min-width:0}#toc-list .chevron{display:none;width:18px;height:18px;color:var(--xm-muted)}
+      #toc-footer{flex:none;padding:8px;border-top:1px solid var(--xm-line)}#status:empty{display:none}
+      #panel{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+      #panel>header{height:56px;flex:none;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:center;padding:0 8px}#back{grid-column:1}#close{grid-column:3;justify-self:end}
+      #panel-title{grid-column:2;margin:0;text-align:center;font-size:17px;line-height:20px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      form{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 8px 32px;scrollbar-width:thin}
+      section>h2{margin:0;padding:20px 12px 8px;font-size:13px;line-height:16px;font-weight:500;color:var(--xm-muted)}
+      form:not([data-search]) section>h2,form:not([data-search]) section:not([data-current]),form[data-search] section[data-sub],form[data-search] section:not(:has([data-match])),form[data-search] :is(.description,.group-label){display:none!important}
+      form[data-search] .fields>:not([data-match]):not(:has([data-match])){display:none!important}
+      #search-empty{margin:0;padding:32px 12px;text-align:center;color:var(--xm-muted)}
+      .description{margin:0;padding:4px 12px 12px;font-size:13px;line-height:16px;color:var(--xm-muted)}
+      .fields{min-width:0;display:flex;flex-direction:column}
+      .group-label,fieldset.choice>legend{margin:0;padding:20px 12px 8px;font-size:13px;line-height:16px;font-weight:500;color:var(--xm-muted)}.group-label{border-top:1px solid var(--xm-line)}
+      fieldset.choice{min-width:0;margin:0;padding:0;border:0}fieldset.choice>legend{float:left;width:100%}fieldset.choice>legend+*{clear:both}
+      .row,.option,.link-row{display:flex;gap:16px;align-items:center;min-height:48px;padding:12px;border-radius:12px;cursor:pointer}.row:hover,.option:hover,.link-row:hover{background:var(--xm-hover)}
+      .row>span,.option>span,.link-row>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+      .row:has(input:disabled){cursor:default;opacity:.5}.row:has(input:disabled):hover{background:transparent}
       /* Motion Prompt #059 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#059 */
-      .row input[type=checkbox]{appearance:none;position:relative;box-sizing:border-box;width:64px;height:34px;flex:0 0 64px;margin:0;border:0;border-radius:17px;background:#d9d7d5;transition:background-color 200ms cubic-bezier(.333333,1,.666667,1)}
-      .row input[type=checkbox]::before{content:"";position:absolute;left:4px;top:4px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgb(0 0 0 / .25);transform:translateX(0);transition:transform 200ms cubic-bezier(.333333,1,.666667,1)}
-      .row input[type=checkbox]:checked{background:#1d9bf0}.row input[type=checkbox]:checked::before{transform:translateX(30px)}
-      #download-history{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto}#download-history>li{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid var(--xm-line);overflow-wrap:anywhere}#download-history a{color:inherit}#download-history>li>span,#download-history details{font-size:12px;color:var(--xm-muted)}
-      .row input[type=checkbox]:disabled{opacity:.45;cursor:default}
+      .row input[type=checkbox]{appearance:none;position:relative;width:34px;height:20px;flex:0 0 34px;margin:0;border:0;border-radius:9999px;background:var(--xm-track,rgb(130 140 150 / .5));transition:background-color 200ms cubic-bezier(.333333,1,.666667,1)}
+      .row input[type=checkbox]::before{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgb(0 0 0 / .25);transform:translateX(0);transition:transform 200ms cubic-bezier(.333333,1,.666667,1)}
+      .row input[type=checkbox]:checked{background:var(--xm-accent)}.row input[type=checkbox]:checked::before{transform:translateX(14px)}
       @media(forced-colors:active){.row input[type=checkbox]{appearance:auto;width:18px;height:18px;flex-basis:18px;background:Canvas}.row input[type=checkbox]::before{content:none}}
+      .option{position:relative}.option input{appearance:none;display:grid;place-items:center;width:20px;height:20px;flex:none;margin:0;border:2px solid var(--xm-muted);border-radius:50%;background:transparent}
+      .option input::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--xm-text);transform:scale(0);transition:transform 160ms cubic-bezier(.333333,1,.666667,1)}.option input:checked{border-color:var(--xm-text)}.option input:checked::before{transform:scale(1)}
+      @media(forced-colors:active){.option input{appearance:auto}.option input::before{content:none}}
+      .link-row{width:100%;border:0;background:transparent;text-align:left}.link-row .value{flex:none;font-size:13px;color:var(--xm-muted)}.link-row>svg{width:18px;height:18px;flex:none;color:var(--xm-muted)}
+      .danger,.link-row.danger{color:var(--xm-error,#f4212e)}
+      .field{display:flex;flex-direction:column;gap:6px;padding:8px 12px;font-size:13px;line-height:16px;color:var(--xm-muted)}
+      input[type=url],input[type=text],input[type=password],textarea{width:100%;height:44px;padding:0 14px;border:1px solid var(--xm-line);border-radius:12px;background:transparent;color:var(--xm-text);font-size:15px;line-height:20px}
+      input[type=url]:focus-visible,input[type=text]:focus-visible,input[type=password]:focus-visible,textarea:focus-visible{outline:0;border-color:var(--xm-accent);box-shadow:0 0 0 1px var(--xm-accent)}
+      textarea{height:auto;min-height:140px;padding:12px 14px;resize:vertical;font:13px/18px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .url-row{display:flex;gap:8px;align-items:center}.url-row input{flex:1;min-width:0}
+      .slider{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 16px;padding:12px;font-size:15px;line-height:20px;color:var(--xm-text)}.slider .range{display:contents}
+      .slider input{grid-column:1/-1;grid-row:2;width:100%;margin:0;accent-color:var(--xm-accent)}.slider output{grid-column:2;grid-row:1;color:var(--xm-muted);font-variant-numeric:tabular-nums}.slider:has(input:disabled){opacity:.5}
+      .buttons{display:flex;gap:8px;flex-wrap:wrap;padding:8px 12px 12px}
+      .action{height:36px;padding:0 16px;border:1px solid var(--xm-line);border-radius:9999px;background:transparent;font-weight:700;white-space:nowrap}.action:hover{background:var(--xm-hover)}.action:disabled{opacity:.5;cursor:default}
+      .primary{background:var(--xm-text);border-color:var(--xm-text);color:var(--xm-panel)}.primary:hover{background:var(--xm-text);opacity:.88}
+      .note{margin:0;padding:4px 12px 8px;font-size:13px;line-height:18px;color:var(--xm-muted);overflow-wrap:anywhere}.note:empty{display:none}
+      #preview{height:168px;margin:0 12px 8px;border:1px solid var(--xm-line);border-radius:16px;background-size:cover;background-position:center;background-blend-mode:multiply;display:grid;place-items:center;overflow:hidden}
+      #preview article{width:min(62%,420px);padding:12px 16px;border-radius:16px;color:var(--xm-text);background:var(--xm-panel)}#preview strong{font-weight:700}#preview p{margin:2px 0 0}
+      #image-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:12px}#image-row>span:not(#image-thumb){flex:1;min-width:150px;display:flex;flex-direction:column;gap:2px}
+      #image-thumb{width:100px;height:64px;flex:none;border:1px solid var(--xm-line);border-radius:12px;background:var(--xm-hover) center/cover no-repeat}
+      #nav-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px 4px;padding:8px 12px 16px}
+      .nav-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;cursor:pointer;color:var(--xm-muted);font-size:13px;line-height:16px;min-width:0}
+      .nav-choice input{position:absolute;width:1px;height:1px;opacity:0}.nav-icon{display:grid;place-items:center;width:52px;height:52px;border:2px solid var(--xm-line);border-radius:50%}.nav-icon svg{width:24px;height:24px}
+      .nav-choice:has(input:checked){color:var(--xm-text)}.nav-choice:has(input:checked) .nav-icon{border-color:var(--xm-accent)}.nav-choice:hover .nav-icon{background:var(--xm-hover)}.nav-choice:has(input:focus-visible) .nav-icon{outline:2px solid var(--xm-accent);outline-offset:3px}.nav-choice:has(input:disabled){cursor:default}
+      #download-history{list-style:none;margin:0;padding:0}#download-history>li{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:12px;overflow-wrap:anywhere}#download-history>li:hover{background:var(--xm-hover)}#download-history a{color:inherit;font-weight:700;text-decoration:none}#download-history a:hover{text-decoration:underline}#download-history>li>span,#download-history details{font-size:13px;line-height:16px;color:var(--xm-muted)}
+      #download-history .history-remove{align-self:flex-start;padding:2px 0;border:0;background:none;font-size:13px;color:var(--xm-muted);text-decoration:underline;text-underline-offset:2px}#download-history .history-remove:hover{color:var(--xm-text)}
+      #css-pending{margin:8px 12px;padding:12px;border:1px solid var(--xm-error,#c93030);border-radius:12px}#css-pending .note{padding:0}#css-pending .buttons{padding:8px 0 0}#css-pending pre{max-height:200px;overflow:auto;margin:8px 0 0;padding:8px;border-radius:8px;background:var(--xm-hover);font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+      [hidden]{display:none!important}
+      /* Narrow windows: X shows the category list first and opens each page full screen. */
+      @media(max-width:640px){
+        dialog{width:100vw;height:100dvh;border:0;border-radius:0}dialog[open]{flex-direction:column}
+        #toc{width:100%;flex:1;border-right:0}#toc-header{display:grid}#search-box{margin-top:4px}
+        #toc-list{padding:4px 0}#toc-list li[data-divider]::before{margin:8px 16px}#toc-list button{height:52px;padding:0 16px;border-radius:0}#toc-list button[aria-current=page]{background:transparent}#toc-list button:hover{background:var(--xm-hover)}#toc-list .chevron{display:block}
+        #toc-footer{padding:8px 4px calc(8px + env(safe-area-inset-bottom))}
+        dialog[data-view=list] #panel,dialog[data-view=detail] #toc{display:none}
+        dialog[data-view=search] #toc{flex:none}dialog[data-view=search] :is(#toc-list,#toc-footer,#panel>header){display:none}
+        #nav-options{grid-template-columns:repeat(4,minmax(0,1fr))}
+      }
       /* Motion Prompt #049 · MIT License (c) 2026 Shohei Ohtaki · https://showheyohtaki.github.io/motion-prompt/#049 */
       dialog::backdrop{background:rgb(18 20 28 / .42);animation:xm-scrim-in 320ms cubic-bezier(.333333,1,.666667,1) both}
       dialog[data-closing]::backdrop{animation:xm-scrim-out 280ms linear(0.000000,0.000122,0.000977,0.003296,0.007812,0.015259,0.026367,0.041870,0.062500,0.088989,0.122070,0.162476,0.210938,0.268188,0.334961,0.411987,0.500000,0.588013,0.665039,0.731812,0.789062,0.837524,0.877930,0.911011,0.937500,0.958130,0.973633,0.984741,0.992188,0.996704,0.999023,0.999878,1.000000) both}
       @keyframes xm-scrim-in{from{opacity:0}to{opacity:1}}@keyframes xm-scrim-out{from{opacity:1}to{opacity:0}}
       @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
-      .field{display:grid;gap:7px}input[type=url],select,textarea{width:100%;min-height:40px;padding:8px 10px;border:1px solid var(--xm-line);border-radius:8px;background:var(--xm-panel);color:inherit}textarea{resize:vertical;min-height:104px;font-family:ui-monospace,monospace;font-size:13px}
-      .range{display:grid;grid-template-columns:1fr 70px;gap:12px;align-items:center}.range output{text-align:right;font-variant-numeric:tabular-nums}input[type=range]{width:100%;accent-color:var(--xm-text)}
-      .buttons{display:flex;gap:10px;flex-wrap:wrap}.action{min-height:36px;padding:7px 14px;background:var(--xm-hover);border:1px solid transparent;border-radius:8px}.action:hover{border-color:var(--xm-muted)}.primary{background:var(--xm-text);color:var(--xm-panel)}
-      .note{margin:0;color:var(--xm-muted);font-size:12px;overflow-wrap:anywhere}#image-state{font-size:13px;margin:0}#nav-options{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px 8px;margin-bottom:8px}
-      .nav-choice{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;cursor:pointer;color:var(--xm-muted);font-size:13px;line-height:1.35;min-width:0}
-      .nav-choice input{position:absolute;width:1px;height:1px;opacity:0}.nav-icon{display:grid;place-items:center;width:54px;height:54px;border:2px solid transparent;border-radius:50%}.nav-icon svg{width:27px;height:27px}
-      .nav-choice:has(input:checked){color:var(--xm-text)}.nav-choice:has(input:checked) .nav-icon{border-color:var(--x-fg-brand,#1d9bf0)}.nav-choice:hover .nav-icon{background:var(--xm-hover)}.nav-choice:has(input:focus-visible) .nav-icon{outline:2px solid var(--xm-text);outline-offset:3px}
-      #preview{min-height:108px;border-radius:8px;border:1px solid var(--xm-line);background-size:cover;background-position:center;background-blend-mode:multiply;display:grid;place-items:center;overflow:hidden}
-      #preview article{width:65%;margin:12px;padding:16px;border-radius:6px;color:var(--xm-text);background:var(--xm-panel)}#preview strong{font-weight:600}#preview p{margin:4px 0 0;font-size:13px}
-      #toc{display:flex;gap:6px;padding:10px 28px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--xm-line);flex-shrink:0}#toc::-webkit-scrollbar{display:none}
-      #toc button{flex:none;min-height:30px;padding:4px 12px;border:1px solid var(--xm-line);border-radius:999px;background:transparent;font-size:13px;color:var(--xm-muted)}#toc button:hover{color:var(--xm-text);border-color:var(--xm-muted)}#toc button[aria-current=true]{background:var(--xm-text);border-color:var(--xm-text);color:var(--xm-panel)}
-      dialog[data-xm-ui-glass]>#toc{background:transparent}
-      #toc[data-more-end]{mask-image:linear-gradient(90deg,#000 calc(100% - 32px),transparent)}#toc[data-more-start]{mask-image:linear-gradient(90deg,transparent,#000 32px)}#toc[data-more-start][data-more-end]{mask-image:linear-gradient(90deg,transparent,#000 32px,#000 calc(100% - 32px),transparent)}
-      input[type=text],input[type=password]{width:100%;min-height:40px;padding:8px 10px;border:1px solid var(--xm-line);border-radius:8px;background:var(--xm-panel);color:inherit}
-      #css-pending{padding:12px;border:1px solid var(--xm-error,#c93030);border-radius:8px}#css-pending pre{max-height:200px;overflow:auto;margin:8px 0 0;padding:8px;border-radius:6px;background:var(--xm-hover);font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
-      #download-history .history-remove{align-self:flex-start;padding:2px 0;border:0;background:none;font-size:12px;color:var(--xm-muted);text-decoration:underline;text-underline-offset:2px}#download-history .history-remove:hover{color:var(--xm-text)}
-      footer{padding:18px 28px 24px;display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap;border-top:1px solid var(--xm-line)}#status{margin:0;min-height:20px;font-size:13px;color:var(--xm-muted)}[hidden]{display:none!important}
-      @media(max-width:640px){dialog{width:calc(100vw - 16px);max-height:94dvh}header{padding:20px}#toc{padding:8px 20px}form{padding:0 20px}section{grid-template-columns:1fr;gap:16px;padding:20px 0}footer{padding:18px 20px}#nav-options{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 8px}}
       @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
     </style>
     <button id="launcher" type="button" aria-label="X 極簡設定" title="X 極簡設定">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--xm-nav-fill,var(--xm-panel,#fff))"/><circle cx="15" cy="17" r="3" fill="var(--xm-nav-fill,var(--xm-panel,#fff))"/></svg><span id="launcher-label">介面設定</span>
     </button>
-    <dialog aria-labelledby="xm-title">
-      <header><div><h1 id="xm-title">X 極簡</h1><p>介面、背景與閱讀空間</p></div><button id="close" type="button" aria-label="關閉設定">×</button></header>
-      <nav id="toc" aria-label="設定分類"></nav>
-      <form method="dialog">
-        <section data-toc="背景"><div><h2>背景與時間線</h2><p class="description">背景留在頁面兩側；中間可保留實色，或透出柔和的背景圖片。</p></div><div class="fields" id="appearance">
-          <label class="row"><span>啟用 X 極簡</span><input type="checkbox" data-key="enabled"></label>
+    <dialog aria-labelledby="xm-title" data-view="detail">
+      <nav id="toc" aria-label="設定分類">
+        <header id="toc-header"><h1 id="xm-title">X 極簡設定</h1><button id="toc-close" class="icon-button" type="button" aria-label="關閉設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button></header>
+        <label id="search-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0zM16 16l5 5"/></svg><input type="search" id="search" placeholder="搜尋設定" aria-label="搜尋設定" autocomplete="off" spellcheck="false"></label>
+        <ul id="toc-list"></ul>
+        <div id="toc-footer"><label class="row"><span><span>啟用 X 極簡</span><small id="status" role="status" aria-live="polite"></small></span><input type="checkbox" data-key="enabled"></label></div>
+      </nav>
+      <div id="panel">
+        <header><button id="back" class="icon-button" type="button" aria-label="返回" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12H4M10 6l-6 6 6 6"/></svg></button><h2 id="panel-title"></h2><button id="close" class="icon-button" type="button" aria-label="關閉設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button></header>
+        <form method="dialog">
+        <p id="search-empty" hidden></p>
+        <section data-toc="背景與時間線" data-icon="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM21 16l-5-5-9 9M11 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"><h2>背景與時間線</h2><p class="description">背景留在頁面兩側；中間可保留實色，或透出柔和的背景圖片。</p><div class="fields" id="appearance">
           <div id="preview" aria-label="時間線背景預覽"><article><strong>你的時間線</strong><p>保留清晰文字與原始媒體。</p></article></div>
-          <label class="field">時間線背景<select data-key="timelineMode"><option value="solid">保留實色背景</option><option value="glass">高斯模糊／毛玻璃</option><option value="liquid">Liquid Glass（同款折射）</option></select></label>
-          <div class="fields" id="liquid-options" hidden><label class="row"><span>輕量模式（停用折射）</span><input type="checkbox" data-key="liquidLite" aria-describedby="liquid-state"></label><p class="note" id="liquid-state" role="status"></p></div>
-          <label class="field">毛玻璃不透明度<div class="range"><input type="range" data-key="opacity" min="15" max="100" step="1"><output></output></div></label>
-          <label class="field">高斯模糊強度<div class="range"><input type="range" data-key="blur" min="0" max="60" step="1"><output></output></div></label>
-          <p class="note">兩側導覽與推薦欄的效果可在「顯示效果」獨立設定。</p>
-          <label class="field">背景圖片網址<input type="url" id="image-url" placeholder="https://…" autocomplete="off"></label>
-          <div class="buttons"><button type="button" class="action" id="apply-url">套用網址</button><button type="button" class="action" id="pick-image">選擇本機圖片</button><button type="button" class="action" id="clear-image">移除圖片</button></div>
+          <h3 class="group-label">背景圖片</h3>
+          <div id="image-row"><span id="image-thumb" aria-hidden="true"></span><span><span id="image-state"></span><small>本機圖片上限 6 MiB，與設定一起存在 Tampermonkey storage</small></span><button type="button" class="action" id="pick-image">選擇本機圖片</button><button type="button" class="action danger" id="clear-image">移除</button></div>
+          <label class="field">或使用圖片網址<span class="url-row"><input type="url" id="image-url" placeholder="https://…" autocomplete="off"><button type="button" class="action" id="apply-url">套用</button></span></label>
           <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden>
-          <p id="image-state"></p><p class="note">本機圖片（上限 6 MiB）與設定存於 Tampermonkey storage。使用網址時，瀏覽器會向圖片網站載入圖片。</p>
-          <label class="field">背景排列<select data-key="backgroundFit"><option value="cover">填滿畫面</option><option value="contain">完整顯示</option><option value="repeat">原尺寸平鋪</option></select></label>
-          <label class="field">背景位置<select data-key="backgroundPosition"><option value="center">置中</option><option value="top">靠上</option><option value="bottom">靠下</option></select></label>
-          <label class="field">背景壓暗<div class="range"><input type="range" data-key="backgroundDim" min="0" max="80" step="1"><output></output></div></label>
-          <label class="field">時間線寬度<div class="range"><input type="range" data-key="width" min="480" max="1100" step="10"><output></output></div></label>
+          <p class="note">使用網址時，瀏覽器會向圖片網站載入圖片。</p>
+          <fieldset class="choice"><legend>背景排列</legend><label class="option"><span>填滿畫面</span><input type="radio" name="backgroundFit" data-key="backgroundFit" value="cover"></label><label class="option"><span>完整顯示</span><input type="radio" name="backgroundFit" data-key="backgroundFit" value="contain"></label><label class="option"><span>原尺寸平鋪</span><input type="radio" name="backgroundFit" data-key="backgroundFit" value="repeat"></label></fieldset>
+          <fieldset class="choice"><legend>背景位置</legend><label class="option"><span>置中</span><input type="radio" name="backgroundPosition" data-key="backgroundPosition" value="center"></label><label class="option"><span>靠上</span><input type="radio" name="backgroundPosition" data-key="backgroundPosition" value="top"></label><label class="option"><span>靠下</span><input type="radio" name="backgroundPosition" data-key="backgroundPosition" value="bottom"></label></fieldset>
+          <label class="field slider">背景壓暗<span class="range"><input type="range" data-key="backgroundDim" min="0" max="80" step="1"><output></output></span></label>
+          <h3 class="group-label">時間線</h3>
+          <fieldset class="choice"><legend>時間線背景</legend><label class="option"><span>保留實色背景</span><input type="radio" name="timelineMode" data-key="timelineMode" value="solid"></label><label class="option"><span>高斯模糊／毛玻璃</span><input type="radio" name="timelineMode" data-key="timelineMode" value="glass"></label><label class="option"><span><span>Liquid Glass</span><small>與導覽相同的折射效果</small></span><input type="radio" name="timelineMode" data-key="timelineMode" value="liquid"></label></fieldset>
+          <div class="fields" id="liquid-options" hidden><label class="row"><span><span>輕量模式</span><small>停用折射，只保留模糊</small></span><input type="checkbox" data-key="liquidLite" aria-describedby="liquid-state"></label><p class="note" id="liquid-state" role="status"></p></div>
+          <label class="field slider" data-glass>毛玻璃不透明度<span class="range"><input type="range" data-key="opacity" min="15" max="100" step="1"><output></output></span></label>
+          <label class="field slider" data-glass>高斯模糊強度<span class="range"><input type="range" data-key="blur" min="0" max="60" step="1"><output></output></span></label>
+          <label class="field slider">時間線寬度<span class="range"><input type="range" data-key="width" min="480" max="1100" step="10"><output></output></span></label>
+          <p class="note">兩側導覽與推薦欄的效果在「顯示效果」獨立設定。</p>
         </div></section>
-        <section data-toc="效果"><div><h2>顯示效果</h2><p class="description">導覽、分頁與浮窗獨立於時間線，使用同款 Liquid Glass 折射。游標會吸附連結與按鈕，移到文字時切換為文字光標。</p></div><div class="fields" id="effects">
-          <label class="field">側欄、分頁與浮窗背景<select data-key="sidebarMode"><option value="liquid">Liquid Glass（同款折射）</option><option value="glass">高斯模糊／毛玻璃</option><option value="solid">實色背景</option></select></label>
-          <div class="fields" id="sidebar-liquid-options"><label class="row"><span>介面輕量模式（停用折射）</span><input type="checkbox" data-key="sidebarLite" aria-describedby="sidebar-liquid-state"></label><p class="note" id="sidebar-liquid-state" role="status"></p></div>
-          <label class="field">介面不透明度<div class="range"><input type="range" data-key="sidebarOpacity" min="15" max="100" step="1"><output></output></div></label>
-          <label class="field">介面模糊強度<div class="range"><input type="range" data-key="sidebarBlur" min="0" max="60" step="1"><output></output></div></label>
-          <label class="row"><span>磁吸與文字游標</span><input type="checkbox" data-key="magneticCursor"></label>
-          <p class="note">觸控裝置或系統要求減少動態效果時，保留原生游標。</p>
+        <section data-toc="顯示效果" data-icon="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16v5M16.5 18.5h5"><h2>顯示效果</h2><p class="description">導覽、分頁與浮窗獨立於時間線，使用同款 Liquid Glass 折射。</p><div class="fields" id="effects">
+          <fieldset class="choice"><legend>側欄、分頁與浮窗背景</legend><label class="option"><span><span>Liquid Glass</span><small>同款折射</small></span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="liquid"></label><label class="option"><span>高斯模糊／毛玻璃</span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="glass"></label><label class="option"><span>實色背景</span><input type="radio" name="sidebarMode" data-key="sidebarMode" value="solid"></label></fieldset>
+          <div class="fields" id="sidebar-liquid-options"><label class="row"><span><span>介面輕量模式</span><small>停用折射，只保留模糊</small></span><input type="checkbox" data-key="sidebarLite" aria-describedby="sidebar-liquid-state"></label><p class="note" id="sidebar-liquid-state" role="status"></p></div>
+          <label class="field slider" data-sidebar-glass>介面不透明度<span class="range"><input type="range" data-key="sidebarOpacity" min="15" max="100" step="1"><output></output></span></label>
+          <label class="field slider" data-sidebar-glass>介面模糊強度<span class="range"><input type="range" data-key="sidebarBlur" min="0" max="60" step="1"><output></output></span></label>
+          <h3 class="group-label">游標</h3>
+          <label class="row"><span><span>磁吸與文字游標</span><small>游標吸附連結與按鈕，移到文字時切換為文字光標。觸控裝置或系統要求減少動態效果時，保留原生游標。</small></span><input type="checkbox" data-key="magneticCursor"></label>
         </div></section>
-        <section data-toc="版面"><div><h2>版面與行為</h2><p class="description">新舊版自動辨識。時間線置中會在空間足夠時對齊視窗中央；窄視窗優先保留閱讀寬度。</p></div><div class="fields" id="reading"><label class="field">透明時間線的文字配色<select data-key="readingTextTone"><option value="auto">依背景自動調整</option><option value="light">淺色文字</option><option value="dark">深色文字</option></select></label></div></section>
-        <section data-toc="隱藏"><div><h2>隱藏介面元素</h2><p class="description">移除廣告、推薦和不常用的入口。關閉開關即恢復 X 原本的顯示。</p></div><div class="fields" id="hiding"></div></section>
-        <section data-toc="計數"><div><h2>貼文計數</h2><p class="description">隱藏數字時，保留按讚、回覆與轉發操作。</p></div><div class="fields" id="posts"></div></section>
-        <section data-toc="下載與分享"><div><h2>媒體下載與分享</h2><p class="description">成功下載後保留紀錄。一般點擊略過已下載的媒體；按住 Shift 再點可重新下載全部。</p></div><div class="fields" id="media"><p class="note" id="download-summary" role="status"></p><ol id="download-history"></ol><div class="buttons"><button type="button" class="action" id="history-more" hidden>顯示更多</button><button type="button" class="action" id="history-clear" hidden>清空下載紀錄</button></div></div></section>
-        <section id="audio-section" data-toc="音量"><div><h2>影片音量</h2><p class="description">沿用你的音量曲線與平衡算法。首頁自動播放保留 X 的靜音設定。</p></div><div class="fields">
-          <label class="row"><span>記憶影片音量</span><input type="checkbox" data-key="rememberVideoVolume"></label>
-          <label class="field">記憶音量<div class="range"><input id="video-volume" type="range" min="0" max="100" step="0.1"><output></output></div></label>
-          <label class="row"><span>音量平衡（減少影片間大小聲差異）</span><input type="checkbox" data-key="balanceVideoAudio"></label>
+        <section data-toc="版面與行為" data-icon="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16M9 10h12"><h2>版面與行為</h2><p class="description">新舊版介面自動辨識。時間線置中會在空間足夠時對齊視窗中央；窄視窗優先保留閱讀寬度。</p><div class="fields" id="reading">
+          <fieldset class="choice"><legend>透明時間線的文字配色</legend><label class="option"><span>依背景自動調整</span><input type="radio" name="readingTextTone" data-key="readingTextTone" value="auto"></label><label class="option"><span>淺色文字</span><input type="radio" name="readingTextTone" data-key="readingTextTone" value="light"></label><label class="option"><span>深色文字</span><input type="radio" name="readingTextTone" data-key="readingTextTone" value="dark"></label></fieldset>
+          <h3 class="group-label">版面</h3><div class="fields" id="reading-layout"></div>
+          <h3 class="group-label">行為</h3><div class="fields" id="reading-behavior"></div>
+        </div></section>
+        <section data-toc="隱藏介面元素" data-icon="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-2.6 3.2M6.6 6.6C4.3 8.1 3 12 3 12s4 6 9 6a9 9 0 0 0 3.4-.7M9.9 9.9a3 3 0 0 0 4.2 4.2"><h2>隱藏介面元素</h2><p class="description">移除廣告、推薦和不常用的入口。關閉開關即恢復 X 原本的顯示。</p><div class="fields" id="hiding">
+          <h3 class="group-label">時間線</h3><div class="fields" id="hiding-timeline"></div>
+          <h3 class="group-label">側欄</h3><div class="fields" id="hiding-side"></div>
+          <h3 class="group-label">浮窗與其他</h3><div class="fields" id="hiding-other"></div>
+        </div></section>
+        <section data-toc="貼文計數" data-icon="M5 20V10M12 20V4M19 20v-7"><h2>貼文計數</h2><p class="description">隱藏數字時，保留按讚、回覆與轉發操作。</p><div class="fields" id="posts"></div></section>
+        <section data-toc="媒體下載與分享" data-icon="M12 3v12M7 10l5 5 5-5M4 20h16"><h2>媒體下載與分享</h2><p class="description">一般點擊略過已下載的媒體；按住 Shift 再點可重新下載全部。</p><div class="fields" id="media">
+          <div class="fields" id="media-download"></div>
+          <h3 class="group-label">分享選單</h3><div class="fields" id="media-share"></div>
+          <h3 class="group-label">紀錄</h3>
+          <button type="button" class="link-row" id="history-open"><span><span>下載紀錄</span><small>成功下載後保留，用來略過重複的媒體</small></span><span class="value" id="history-count"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div></section>
+        <section id="history-page" data-sub data-toc="下載紀錄"><h2>下載紀錄</h2><p class="description" id="download-summary" role="status"></p><div class="fields">
+          <ol id="download-history"></ol>
+          <div class="buttons"><button type="button" class="action" id="history-more" hidden>顯示更多</button></div>
+          <button type="button" class="link-row danger" id="history-clear" hidden><span><span>清空下載紀錄</span><small>已下載的檔案不受影響，之後再按下載會重新下載</small></span></button>
+        </div></section>
+        <section id="audio-section" data-toc="影片音量" data-icon="M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"><h2>影片音量</h2><p class="description">沿用你的音量曲線與平衡算法。首頁自動播放保留 X 的靜音設定。</p><div class="fields">
+          <label class="row"><span><span>記憶影片音量</span><small>播放器調整的音量會套用到後續影片</small></span><input type="checkbox" data-key="rememberVideoVolume"></label>
+          <label class="field slider">記憶音量<span class="range"><input id="video-volume" type="range" min="0" max="100" step="0.1"><output></output></span></label>
+          <label class="row"><span><span>音量平衡</span><small>減少影片之間的大小聲差異，音訊在本機處理</small></span><input type="checkbox" data-key="balanceVideoAudio"></label>
           <p class="note" id="audio-state" role="status">播放影片後啟用音量平衡。</p>
-          <p class="note">播放器調整的音量會套用到後續影片，並存進 Tampermonkey。滑桿採三次方曲線，低音量更容易微調；50% 對應 12.5% 原始增益。音訊在本機處理。</p>
+          <p class="note">音量會存進 Tampermonkey。滑桿採三次方曲線，低音量更容易微調；50% 對應 12.5% 原始增益。</p>
         </div></section>
-        <section data-toc="導覽"><div><h2>側邊導覽</h2><p class="description">點圖示切換顯示。藍色外圈表示顯示，灰色表示隱藏。設定入口會一直保留。</p></div><div class="fields">
+        <section data-toc="側邊導覽" data-icon="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16M5.5 8h1M5.5 11h1M5.5 14h1"><h2>側邊導覽</h2><p class="description">點圖示切換顯示，藍色外圈表示顯示。「更多」一直保留，X 極簡的設定入口在它的選單裡。</p><div class="fields">
           <div id="nav-options" role="group" aria-label="顯示於側邊導覽的項目"></div>
-          <label class="field">導覽文字<select data-key="navLabels"><option value="always">持續顯示</option><option value="hover">停留後展開／鍵盤聚焦時顯示</option><option value="hidden">只顯示圖示</option></select></label>
-          <div class="fields" id="navigation"></div>
+          <fieldset class="choice"><legend>導覽文字</legend><label class="option"><span>持續顯示</span><input type="radio" name="navLabels" data-key="navLabels" value="always"></label><label class="option"><span><span>停留後展開</span><small>鍵盤聚焦時也會顯示</small></span><input type="radio" name="navLabels" data-key="navLabels" value="hover"></label><label class="option"><span>只顯示圖示</span><input type="radio" name="navLabels" data-key="navLabels" value="hidden"></label></fieldset>
+          <h3 class="group-label">其他</h3><div class="fields" id="navigation"></div>
         </div></section>
-        <section data-toc="同步"><div><h2>跨裝置同步</h2><p class="description">同步外觀、背景、音量與下載紀錄。Google Drive 使用配套 Apps Script；WebDAV 使用既有的同步檔案網址。連線密鑰只保存在此裝置。</p></div><div class="fields">
-          <label class="field">同步服務<select id="sync-provider"><option value="drive">Google Drive</option><option value="webdav">WebDAV</option></select></label>
+        <section data-toc="跨裝置同步" data-divider data-icon="M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9zM12 16v-5M9.5 13.5 12 11l2.5 2.5"><h2>跨裝置同步</h2><p class="description">同步外觀、背景、音量與下載紀錄。連線密鑰只保存在此裝置。</p><div class="fields">
+          <fieldset class="choice"><legend>同步服務</legend><label class="option"><span><span>Google Drive</span><small>使用配套 Apps Script</small></span><input type="radio" name="sync-provider" value="drive"></label><label class="option"><span><span>WebDAV</span><small>使用既有的同步檔案網址</small></span><input type="radio" name="sync-provider" value="webdav"></label></fieldset>
+          <h3 class="group-label">連線</h3>
           <p class="note" id="sync-connection"></p>
           <label class="field"><span id="sync-url-label">Apps Script 的 /exec 網址</span><input type="url" id="sync-url" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
           <label class="field" data-sync-provider="drive">同步密鑰<input type="password" id="sync-key" autocomplete="off" spellcheck="false"></label>
           <label class="field" data-sync-provider="webdav">使用者名稱<input type="text" id="sync-user" autocomplete="off" spellcheck="false"></label>
           <label class="field" data-sync-provider="webdav">應用程式密碼<input type="password" id="sync-password" autocomplete="new-password" spellcheck="false"></label>
-          <div class="buttons"><button type="button" class="action" id="sync-save">儲存連線</button><button type="button" class="action" id="sync-test">測試連線</button><button type="button" class="action" id="sync-now">立即同步</button></div>
-          <label class="row"><span>自動同步（開頁、變更後與每分鐘）</span><input type="checkbox" id="sync-auto"></label>
+          <div class="buttons"><button type="button" class="action primary" id="sync-now">立即同步</button><button type="button" class="action" id="sync-test">測試連線</button><button type="button" class="action" id="sync-save">儲存連線</button></div>
           <p class="note" id="sync-state" role="status" aria-live="polite"></p>
+          <label class="row"><span><span>自動同步</span><small>開頁、變更後與每分鐘</small></span><input type="checkbox" id="sync-auto"></label>
           <p class="note">啟用後會將上述資料傳送至你設定的服務；X 分頁關閉時停止同步。修改連線或切換服務會先關閉自動同步。來自其他裝置的自訂 CSS 需要你確認後才會套用。</p>
         </div></section>
-        <section data-toc="進階"><div><h2>進階與備份</h2><p class="description">匯出後可在 macOS 匯入，包含本機背景圖。</p></div><div class="fields">
-          <label class="field">自訂 CSS<textarea data-key="customCSS" spellcheck="false" aria-label="自訂 CSS"></textarea></label>
+        <section data-toc="進階與備份" data-icon="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"><h2>進階與備份</h2><p class="description">匯出的檔案包含本機背景圖，可在其他電腦匯入。</p><div class="fields">
+          <label class="field">自訂 CSS<textarea data-key="customCSS" spellcheck="false"></textarea></label>
           <div class="fields" id="css-pending" hidden><p class="note" id="css-pending-state" role="status"></p><details><summary>查看雲端的自訂 CSS</summary><pre id="css-pending-text"></pre></details><div class="buttons"><button type="button" class="action" id="css-accept">套用雲端 CSS</button><button type="button" class="action" id="css-keep">保留本機 CSS</button></div></div>
-          <div class="buttons"><button class="action" type="button" id="export">匯出設定</button><button class="action" type="button" id="import">匯入設定</button><button class="action" type="button" id="reset">恢復預設</button></div>
+          <h3 class="group-label">備份</h3>
+          <button type="button" class="link-row" id="export"><span><span>匯出設定</span><small>下載包含背景、音量與下載紀錄的 JSON 檔</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button type="button" class="link-row" id="import"><span><span>匯入設定</span><small>從 X 極簡匯出的 JSON 檔還原</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button type="button" class="link-row danger" id="reset"><span><span>恢復預設</span><small>清除設定、背景與影片音量；下載紀錄與同步連線保留</small></span></button>
           <input type="file" id="import-file" accept="application/json,.json" hidden>
         </div></section>
-      </form>
-      <footer><p id="status" role="status" aria-live="polite"></p><button class="action primary" type="button" id="done">完成</button></footer>
+        </form>
+      </div>
     </dialog>`;
 
   const dialog = shadow.querySelector('dialog');
   const $ = selector => shadow.querySelector(selector);
-  function toggles(target, entries, prepend=false) {
+  function toggles(target, entries) {
     const rows=[];
-    for (const [key, title] of entries) {
+    for (const [key, title, detail] of entries) {
       const label = document.createElement('label');
       label.className = 'row';
-      const text = document.createElement('span');
-      text.textContent = title;
+      const text = document.createElement('span'),name = document.createElement('span');
+      name.textContent = title;text.append(name);
+      if(detail){const small=document.createElement('small');small.textContent=detail;text.append(small);}
       const input = document.createElement('input');
       input.type = 'checkbox'; input.dataset.key = key;
       label.append(text, input); rows.push(label);
     }
-    if(prepend)$(target).prepend(...rows);else $(target).append(...rows);
+    $(target).append(...rows);
   }
-  toggles('#reading', [
+  toggles('#reading-layout', [
     ['centerTimeline','時間線水平置中'],['navAlignLeft','左側導覽靠齊視窗左緣'],['rightAlignSidebar','右側推薦欄靠齊視窗右緣'],
     ['removeBorders','隱藏時間線兩側框線'],['removePostBorders','隱藏貼文分隔線'],['stickyHeader','固定頂部標頭'],
-    ['transparentSearch','透明搜尋列'],['systemFont','使用系統字體'],
-    ['defaultFollowing','進入首頁時選擇「正在跟隨」'],['zen','專注寫作模式（僅保留發文框）']
+    ['transparentSearch','透明搜尋列'],['systemFont','使用系統字體']
   ]);
-  toggles('#hiding', [
-    ['hideAds','隱藏廣告貼文'],['hideSuggestions','隱藏推薦追蹤與主題'],['hideSidebar','隱藏右側趨勢與推薦欄'],['hidePremiumUpsell','隱藏 Subscribe to Premium'],
-    ['hideTopTabs','隱藏首頁時間線分頁'],['hideComposer','隱藏首頁發文框'],['hideSearch','隱藏右欄搜尋列'],
-    ['hidePostButton','隱藏側邊發文按鈕'],['hideGrok','隱藏 Grok 浮窗與貼文 AI 按鈕'],
-    ['hideChatDrawer','隱藏右下角聊天浮窗（含按鈕）'],['hideTitleCount','隱藏分頁標題的未讀數']
-  ]);
+  toggles('#reading-behavior', [['defaultFollowing','進入首頁時選擇「正在跟隨」'],['zen','專注寫作模式','只保留發文框']]);
+  toggles('#hiding-timeline', [['hideAds','隱藏廣告貼文'],['hideSuggestions','隱藏推薦追蹤與主題'],['hideTopTabs','隱藏首頁時間線分頁'],['hideComposer','隱藏首頁發文框']]);
+  toggles('#hiding-side', [['hideSidebar','隱藏右側趨勢與推薦欄'],['hideSearch','隱藏右欄搜尋列'],['hidePremiumUpsell','隱藏 Subscribe to Premium'],['hidePostButton','隱藏側邊發文按鈕']]);
+  toggles('#hiding-other', [['hideGrok','隱藏 Grok','浮窗與貼文上的 AI 按鈕'],['hideChatDrawer','隱藏右下角聊天浮窗','含按鈕'],['hideTitleCount','隱藏分頁標題的未讀數']]);
   toggles('#posts', [
     ['hideViewCount','隱藏瀏覽次數'],['hideReplyCount','隱藏回覆數'],['hideRepostCount','隱藏轉發數'],['hideLikeCount','隱藏喜歡數'],['hideFollowCount','隱藏追蹤與粉絲數']
   ]);
-  toggles('#media', [
-    ['mediaDownloadEnabled','在貼文操作列顯示媒體下載按鈕'],['fixupCopy','分享選單加入「複製 FixupX 連結」'],['hideNativeCopyLink','隱藏分享選單原本的「複製連結」']
-  ],true);
+  toggles('#media-download', [['mediaDownloadEnabled','在貼文操作列顯示下載按鈕']]);
+  toggles('#media-share', [['fixupCopy','加入「複製 FixupX 連結」'],['hideNativeCopyLink','隱藏原本的「複製連結」']]);
   toggles('#navigation', [['centerNav','垂直置中導覽'],['hideLogo','隱藏 X 標誌'],['hideUnread','隱藏導覽未讀徽章']]);
   for (const [key, title] of NAV) {
     const label = document.createElement('label'); label.className = 'nav-choice';
     const text = document.createElement('span'); text.textContent = title;
     const input = document.createElement('input'); input.type='checkbox'; input.dataset.nav = key;
     input.setAttribute('aria-label',`顯示${title}`);
+    // The settings entry lives in the More menu, so More itself can never be hidden.
+    if(key==='more'){input.disabled=true;label.title='X 極簡的設定入口在「更多」選單裡，所以一直顯示';}
     const icon = document.createElement('span');icon.className='nav-icon';
     icon.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[key]}</svg>`;
     label.append(input,icon,text); $('#nav-options').append(label);
   }
-  const tocSections=[...shadow.querySelectorAll('section[data-toc]')];
-  const tocButtons=tocSections.map((section,index)=>{
-    const button=document.createElement('button');button.type='button';button.textContent=section.dataset.toc;
-    const heading=section.querySelector('h2');heading.id=`xm-section-${index}`;button.setAttribute('aria-controls',heading.id);
-    button.addEventListener('click',()=>{section.scrollIntoView({block:'start',behavior:matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});setTocCurrent(index);});
-    $('#toc').append(button);return button;
+  // One page at a time, like X's settings: the list picks a page, search shows matching rows from every page.
+  const tocSections=[...shadow.querySelectorAll('section[data-toc]:not([data-sub])')];
+  const narrowSettings=matchMedia('(max-width:640px)');
+  let currentSection=tocSections[0],subSection=null,settingsView='detail';
+  const tocButtons=tocSections.map(section=>{
+    const item=document.createElement('li'),button=document.createElement('button');
+    if(section.hasAttribute('data-divider'))item.dataset.divider='';
+    button.type='button';
+    button.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${section.dataset.icon}"/></svg><span></span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`;
+    button.querySelector('span').textContent=section.dataset.toc;
+    button.addEventListener('click',()=>showSection(section));
+    item.append(button);$('#toc-list').append(item);return button;
   });
-  function setTocCurrent(index){
-    tocButtons.forEach((button,i)=>button.setAttribute('aria-current',String(i===index)));
-    const button=tocButtons[index],bar=$('#toc');
-    if(button&&(button.offsetLeft<bar.scrollLeft||button.offsetLeft+button.offsetWidth>bar.scrollLeft+bar.clientWidth))bar.scrollLeft=button.offsetLeft-16;
+  function renderPanel(){
+    const raw=$('#search').value.trim(),query=raw.toLowerCase(),form=$('form');
+    form.toggleAttribute('data-search',!!query);
+    for(const item of form.querySelectorAll('[data-match]'))item.removeAttribute('data-match');
+    let matches=0;
+    if(query)for(const item of form.querySelectorAll('section:not([data-sub]) :is(.row,.field,fieldset.choice,.link-row,#nav-options,#image-row)')){
+      if(item.closest('[hidden]')||!item.textContent.toLowerCase().includes(query))continue;
+      item.setAttribute('data-match','');matches++;
+    }
+    $('#search-empty').hidden=!query||matches>0;
+    $('#search-empty').textContent=`找不到符合「${raw}」的設定。`;
+    const shown=subSection||currentSection;
+    for(const section of form.querySelectorAll('section'))section.toggleAttribute('data-current',section===shown);
+    tocButtons.forEach((button,i)=>button.setAttribute('aria-current',!query&&tocSections[i]===currentSection?'page':'false'));
+    $('#panel-title').textContent=query?'搜尋結果':shown.dataset.toc;
+    dialog.dataset.view=query?'search':settingsView;
+    $('#back').hidden=!!query||!(subSection||narrowSettings.matches);
   }
-  // Narrow dialogs clip the chip row: fade the clipped edge and let a plain mouse wheel scroll it sideways.
-  const tocBar=$('#toc');
-  const tocEdges=()=>{const max=tocBar.scrollWidth-tocBar.clientWidth;tocBar.toggleAttribute('data-more-start',tocBar.scrollLeft>1);tocBar.toggleAttribute('data-more-end',tocBar.scrollLeft<max-1);};
-  tocBar.addEventListener('scroll',tocEdges,{passive:true});
-  tocBar.addEventListener('wheel',event=>{
-    if(event.ctrlKey||Math.abs(event.deltaX)>=Math.abs(event.deltaY)||tocBar.scrollWidth<=tocBar.clientWidth)return;
-    event.preventDefault();tocBar.scrollLeft+=event.deltaMode===1?event.deltaY*16:event.deltaY;
-  },{passive:false});
-  new ResizeObserver(tocEdges).observe(tocBar);
-  let tocFrame=0;
-  $('form').addEventListener('scroll',()=>{
-    if(tocFrame)return;
-    tocFrame=requestAnimationFrame(()=>{
-      tocFrame=0;const form=$('form'),top=form.getBoundingClientRect().top+24;
-      let current=0;tocSections.forEach((section,i)=>{if(section.getBoundingClientRect().top<=top)current=i;});
-      if(form.scrollTop+form.clientHeight>=form.scrollHeight-2)current=tocSections.length-1;
-      setTocCurrent(current);
-    });
-  },{passive:true});
-  setTocCurrent(0);
+  function showSection(section){
+    currentSection=section;subSection=null;settingsView='detail';
+    if($('#search').value){$('#search').value='';}
+    renderPanel();$('form').scrollTop=0;
+    if(narrowSettings.matches)$('#back').focus();
+  }
+  function showSubSection(section,from){
+    // Opening a sub-page from search results leaves search and lands in that page's category.
+    if($('#search').value){$('#search').value='';currentSection=tocSections.find(page=>page.contains(from))||currentSection;settingsView='detail';}
+    subSection=section;subSection.returnFocus=from;renderPanel();$('form').scrollTop=0;$('#back').focus();
+  }
+  $('#back').addEventListener('click',()=>{
+    if(subSection){const focus=subSection.returnFocus;subSection=null;renderPanel();focus?.focus();return;}
+    settingsView='list';renderPanel();tocButtons[tocSections.indexOf(currentSection)]?.focus();
+  });
+  $('#history-open').addEventListener('click',event=>showSubSection($('#history-page'),event.currentTarget));
+  $('#search').addEventListener('input',()=>{renderPanel();$('form').scrollTop=0;});
+  narrowSettings.addEventListener?.('change',renderPanel);
+  renderPanel();
 
   function status(message, error=false) {
     $('#status').textContent = message;
@@ -360,6 +448,7 @@
     for (const input of shadow.querySelectorAll('[data-key]')) {
       const value = settings[input.dataset.key];
       if (input.type === 'checkbox') input.checked = value || input.dataset.key==='liquidLite'&&['blur','solid'].includes(root.dataset.xmLiquid)||input.dataset.key==='sidebarLite'&&sidebarLiteActive();
+      else if (input.type === 'radio') input.checked = String(value) === input.value;
       else if (input !== shadow.activeElement) input.value = value;
       if (input.type === 'range') input.nextElementSibling.textContent = `${value}${['blur','sidebarBlur','width'].includes(input.dataset.key) ? ' px' : '%'}`;
     }
@@ -368,18 +457,21 @@
     if ($('#image-url') !== shadow.activeElement) $('#image-url').value = settings.background.startsWith('https:') ? settings.background : '';
     $('#image-state').textContent = !settings.background ? '目前未設定背景圖片' : settings.background.startsWith('data:') ? '已儲存本機背景圖片' : '已設定網址背景圖片';
     const glass = settings.timelineMode === 'glass' || !!settings.background;
-    for (const key of ['opacity','blur']) $(`[data-key="${key}"]`).disabled = !glass;
+    for (const row of shadow.querySelectorAll('[data-glass]')) row.hidden = !glass;
+    $('#image-thumb').style.backgroundImage = settings.background ? `url(${JSON.stringify(settings.background)})` : 'none';
+    $('#clear-image').disabled = !settings.background;
     const preview = $('#preview');
     preview.style.backgroundImage = settings.background ? `url(${JSON.stringify(settings.background)})` : 'none';
     const shade=Math.round(255*(1-settings.backgroundDim/100));
     preview.style.backgroundColor = settings.background ? `rgb(${shade} ${shade} ${shade})` : 'var(--xm-hover)';
     $('#liquid-options').hidden=settings.timelineMode!=='liquid';
     $('#sidebar-liquid-options').hidden=settings.sidebarMode!=='liquid';
-    for(const key of ['sidebarBlur','sidebarOpacity'])$(`[data-key="${key}"]`).disabled=settings.sidebarMode==='solid';
+    for(const row of shadow.querySelectorAll('[data-sidebar-glass]'))row.hidden=settings.sidebarMode==='solid';
     $('[data-key="hideNativeCopyLink"]').disabled=!settings.fixupCopy;
     syncPendingCSSUI();
     const timelineGlass=settings.timelineMode!=='solid';
     preview.querySelector('article').style.cssText = `background:rgb(var(--xm-rgb) / ${timelineGlass ? settings.opacity/100 : 1});backdrop-filter:blur(${timelineGlass ? settings.blur : 0}px);-webkit-backdrop-filter:blur(${timelineGlass ? settings.blur : 0}px)`;
+    renderPanel();
   }
   function commit(next,retryEffect='',track=true) {
     const clean = normalize(next);
@@ -401,9 +493,9 @@
     animation.finished.then(()=>{if(settingsAnimation===animation){settingsAnimation=null;if(!open){dialog.close();dialog.removeAttribute('data-closing');}updateInterfaceGlass();}}).catch(()=>{});
   }
   function closeSettings(){if(dialog.open&&!dialog.hasAttribute('data-closing'))animateSettings(false);}
-  function openSettings() { syncUI(); if (!dialog.open){dialog.showModal();animateSettings(true);updateInterfaceGlass();} status(storageError || '變更會立即儲存。', !!storageError); }
+  function openSettings() { if (!dialog.open){subSection=null;settingsView=narrowSettings.matches?'list':'detail';} syncUI(); if (!dialog.open){dialog.showModal();animateSettings(true);updateInterfaceGlass();} status(storageError || '變更會立即儲存。', !!storageError); }
   $('#launcher').addEventListener('click', openSettings);
-  for (const id of ['close','done']) $(`#${id}`).addEventListener('click', closeSettings);
+  for (const id of ['close','toc-close']) $(`#${id}`).addEventListener('click', closeSettings);
   dialog.addEventListener('click', event => { if (event.target === dialog) { const r=dialog.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) closeSettings(); } });
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeSettings();});
   shadow.querySelector('form').addEventListener('submit', event => event.preventDefault());
@@ -585,6 +677,7 @@
   const ENABLED='html[data-xm-enabled="true"]';
   const rules=(key,selector,body='display:none!important')=>`${selector.split(',').map(part=>`${ENABLED}[data-xm-${key}="true"] ${part.trim()}`).join(',')}{${body}}`;
   style.textContent=`
+    [data-xm-menu-launcher]{cursor:pointer}[data-xm-menu-launcher]:is(:hover,:focus-visible,[data-highlighted]){background-color:color-mix(in srgb,currentColor 10%,transparent)}[data-xm-menu-launcher]:focus-visible{outline:2px solid #1d9bf0;outline-offset:-2px}
     .xm-media-download{position:relative;display:inline-flex;align-items:center;justify-content:center;align-self:center;flex:none;min-width:36px;height:36px;padding:0;border:0;border-radius:999px;background:transparent;font:inherit;cursor:pointer;vertical-align:middle}
     .xm-media-download:not([data-xm-native-action]){color:var(--xm-action-muted,var(--xm-reading-muted,var(--xm-muted,#536471)))}.xm-media-download:not([data-xm-native-action]):hover{background:rgb(29 155 240 / .1);color:#1d9bf0}.xm-media-download:not([data-xm-native-action]):focus-visible{outline:2px solid currentColor;outline-offset:2px}.xm-media-download:disabled{cursor:progress;opacity:.65}.xm-media-download svg{width:18.75px;height:18.75px;flex:none}.xm-media-result{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
     .xm-media-download[aria-busy] .xm-media-result,.xm-media-download[data-xm-download-error] .xm-media-result,.xm-media-download[data-xm-download-partial] .xm-media-result{width:auto;height:15px;min-width:15px;clip-path:none;overflow:visible;top:0;right:-4px;padding:0 4px;border-radius:999px;background:#1d9bf0;color:#fff;font:600 10px/15px system-ui,sans-serif;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums}
@@ -1022,6 +1115,60 @@
     const vars={'--xm-nav-rgb':fill,'--xm-nav-fill':`rgb(${fill})`,'--xm-nav-text':dark?'#eff3f4':'#0f1419','--xm-nav-muted':dark?'#b1b8bd':'#4e5962','--xm-nav-hover':dark?'rgb(255 255 255 / .12)':'rgb(0 0 0 / .08)','--xm-nav-opacity':String(settings.sidebarOpacity/100)};
     for(const [key,value] of Object.entries(vars))if(root.style.getPropertyValue(key)!==value)root.style.setProperty(key,value);
   }
+  function navMoreButton(nav){
+    return nav.querySelector('[data-testid="AppTabBar_More_Menu"]')||[...nav.querySelectorAll('button[aria-haspopup="menu"],[role="button"][aria-haspopup="menu"]')].find(button=>!button.closest('[data-testid="SideNav_AccountSwitcher_Button"]')&&!button.querySelector('img'));
+  }
+  const MENU_LAUNCHER_ICON='<path d="M4 7h2M12 7h8M4 17h8M18 17h2"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>';
+  // Adds 「介面設定」 under X's own "Settings and privacy" item by cloning it, so the entry inherits X's menu styling in both UIs.
+  function injectMenuLauncher(){
+    for(const menu of document.querySelectorAll('[role="menu"]')){
+      if(menu.querySelector('[data-xm-menu-launcher]'))continue;
+      const link=menu.querySelector('a[href="/settings"],a[href^="/settings/"]');
+      const source=link?.closest('[role="menuitem"]')||link;
+      if(!source||!menu.contains(source))continue;
+      // The old UI wraps the link in its own row; copy that wrapper so the entry becomes a new row instead of sitting beside it.
+      let anchor=source;
+      while(anchor.parentElement&&anchor.parentElement!==menu&&anchor.parentElement.querySelectorAll('a[href],[role="menuitem"]').length===1)anchor=anchor.parentElement;
+      const copy=anchor.cloneNode(true);
+      const item=anchor===source?copy:copy.querySelector('a[href="/settings"],a[href^="/settings/"]')?.closest('[role="menuitem"]')||copy.querySelector('a[href="/settings"],a[href^="/settings/"]');
+      if(!item)continue;
+      for(const element of [copy,...copy.querySelectorAll('*')])for(const name of ['href','id','data-testid','data-highlighted','aria-current','aria-selected'])element.removeAttribute(name);
+      item.setAttribute('role','menuitem');item.tabIndex=-1;item.dataset.xmMenuLauncher='';
+      const svg=item.querySelector('svg');
+      if(svg){
+        const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        for(const name of ['class','style','width','height'])if(svg.hasAttribute(name))icon.setAttribute(name,svg.getAttribute(name));
+        for(const [name,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.8','stroke-linecap':'round','aria-hidden':'true'}))icon.setAttribute(name,value);
+        icon.innerHTML=MENU_LAUNCHER_ICON;svg.replaceWith(icon);
+      }
+      const texts=[];const walker=document.createTreeWalker(item,NodeFilter.SHOW_TEXT);
+      while(walker.nextNode())if(walker.currentNode.data.trim())texts.push(walker.currentNode);
+      if(!texts.length)continue;
+      texts[0].data='介面設定';for(const text of texts.slice(1))text.data='';
+      const highlight=on=>{if(on){for(const other of menu.querySelectorAll('[data-highlighted]'))other.removeAttribute('data-highlighted');item.setAttribute('data-highlighted','');}else item.removeAttribute('data-highlighted');};
+      const activate=event=>{
+        event.preventDefault();event.stopPropagation();
+        menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}));
+        // The new UI closes on Escape; the old UI's dropdown ignores synthetic keys but closes when its trigger is pressed again.
+        setTimeout(()=>{if(menu.isConnected)document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')?.click();openSettings();});
+      };
+      item.addEventListener('click',activate);
+      item.addEventListener('keydown',event=>{
+        if(event.key==='Enter'||event.key===' ')activate(event);
+        else if(event.key==='ArrowUp'||event.key==='ArrowDown'){
+          event.preventDefault();event.stopPropagation();
+          const items=[...menu.querySelectorAll('[role="menuitem"]')];
+          (event.key==='ArrowUp'?source:items[0])?.focus();
+        }
+      });
+      item.addEventListener('pointerenter',()=>highlight(true));item.addEventListener('pointerleave',()=>highlight(false));
+      item.addEventListener('focus',()=>highlight(true));item.addEventListener('blur',()=>highlight(false));
+      menu.addEventListener('keydown',event=>{
+        if(event.key==='ArrowDown'&&event.target===source&&item.isConnected){event.preventDefault();event.stopPropagation();item.focus();}
+      },true);
+      anchor.after(copy);
+    }
+  }
   function moveSettings(target,placement){
     const reopen=dialog.open;
     if(reopen)dialog.close();
@@ -1118,10 +1265,14 @@
     const tabbar=navVisible&&getComputedStyle(nav).flexDirection.startsWith('row');
     for(const previous of document.querySelectorAll('[data-xm-tabbar]'))if(previous!==nav||!tabbar)unmark(previous,'tabbar');
     if(tabbar)mark(nav,'tabbar');
-    const placement=tabbar?'tabbar':'nav';
-    if(navVisible&&!nav.contains(host))moveSettings(nav,placement);
-    else if(navVisible&&host.dataset.placement!==placement)host.dataset.placement=placement;
-    else if(!navVisible&&host.parentElement!==document.body)moveSettings(document.body,'fallback');
+    // The launcher lives in X's More menu (injectMenuLauncher). A tab bar has no More menu, so it keeps its own tab there.
+    // While the navigation is missing (page loading, media viewer) nothing floats over X; the Tampermonkey menu still opens settings.
+    const moreButton=navVisible&&!tabbar?navMoreButton(nav):null;
+    const placement=!navVisible||moreButton?'menu':tabbar?'tabbar':'nav';
+    const parent=placement==='tabbar'||placement==='nav'?nav:document.body;
+    if(host.parentElement!==parent)moveSettings(parent,placement);
+    else if(host.dataset.placement!==placement)host.dataset.placement=placement;
+    injectMenuLauncher();
     updateNavTheme(nav);bindNavigation(nav);
     const primary=excluded?null:document.querySelector('[data-testid="primaryColumn"]')||document.querySelector('main');
     measureCentering(primary,nav);
@@ -2463,7 +2614,7 @@
   }
   function syncConnectionUI(){
     const provider=syncConfig.provider,entry=syncConfig[provider];
-    $('#sync-provider').value=provider;$('#sync-auto').checked=syncConfig.auto;
+    for(const option of shadow.querySelectorAll('[name="sync-provider"]'))option.checked=option.value===provider;$('#sync-auto').checked=syncConfig.auto;
     $('#sync-connection').textContent=entry.url?`已設定 ${provider==='drive'?'Google Drive':'WebDAV'} · ${new URL(entry.url).host}`:'尚未設定連線。';
     $('#sync-state').textContent=syncMessage||(syncConfig.lastSuccess?`上次同步：${new Date(syncConfig.lastSuccess).toLocaleString()}`:'尚未同步。');
     syncFormUI();
@@ -2576,7 +2727,7 @@
       finally{running=false;$('#sync-now').disabled=false;syncConnectionUI();if(dirty&&syncConfig.auto)changed();}
     }
     function changed(){if(running)dirty=true;if(!syncConfig.auto)return;clearTimeout(timer);timer=setTimeout(()=>{timer=0;run();},1500);}
-    $('#sync-provider').addEventListener('change',event=>{if(!event.isTrusted){syncConnectionUI();return;}persistSyncConfig({...syncConfig,provider:event.target.value==='webdav'?'webdav':'drive',auto:false,lastSuccess:0});});
+    for(const option of shadow.querySelectorAll('[name="sync-provider"]'))option.addEventListener('change',event=>{if(!event.isTrusted||!event.target.checked){syncConnectionUI();return;}persistSyncConfig({...syncConfig,provider:event.target.value==='webdav'?'webdav':'drive',auto:false,lastSuccess:0});});
     function saveConnection(){
       try{
         const {provider,entry}=connectionFromForm();
@@ -2680,6 +2831,7 @@
     if(renderedHistory===downloadHistory&&renderedLimit===historyLimit)return;
     renderedHistory=downloadHistory;renderedLimit=historyLimit;
     const posts=Object.entries(downloadHistory).map(([id,post])=>({id,...post,count:Object.keys(post.files).length,at:Math.max(...Object.values(post.files).map(file=>file.downloadedAt))})).sort((a,b)=>b.at-a.at||a.id.localeCompare(b.id));
+    $('#history-count').textContent=posts.length?`${posts.length} 則`:'';
     $('#download-summary').textContent=posts.length?`已記錄 ${posts.length} 則貼文、${posts.reduce((sum,post)=>sum+post.count,0)} 個媒體。`:'尚無下載紀錄。';
     const list=$('#download-history'),fragment=document.createDocumentFragment();
     for(const post of posts.slice(0,historyLimit)){
