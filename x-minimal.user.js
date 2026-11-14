@@ -506,6 +506,8 @@
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeSettings();});
   shadow.querySelector('form').addEventListener('submit', event => event.preventDefault());
   shadow.addEventListener('change', event => {
+    // Page scripts can reach this open shadow root; only real user input may change saved settings.
+    if (!event.isTrusted) return;
     const input = event.target;
     if (input.dataset.key) commit({...settings,[input.dataset.key]:input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value,...input.dataset.key==='liquidTier'?{liquidLite:input.value==='lite'}:input.dataset.key==='sidebarTier'?{sidebarLite:input.value==='lite'}:{}});
     if (input.dataset.nav) commit({...settings,navHidden:[...shadow.querySelectorAll('[data-nav]:not(:checked)')].map(i=>i.dataset.nav)});
