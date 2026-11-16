@@ -1685,7 +1685,10 @@
       px=e.clientX;py=e.clientY;
       if(down&&!getSelection()?.isCollapsed){hide();return;}
       if(!ring.classList.contains('is-visible')){cur.x=px;cur.y=py;ring.classList.add('is-visible');}
-      pick(e.composedPath().find(node=>node instanceof Element)||null);
+      // 設定面板是封閉 Shadow DOM，composedPath 只看得到 host；在 host 上時改用 hitAtPoint 找到裡面的控制項。
+      let target=e.composedPath().find(node=>node instanceof Element)||null;
+      if(target===host)target=hitAtPoint();
+      pick(target);
       if(following()){cur.x=px;if(!beam)cur.y=py;place();}
       kick();
     }
