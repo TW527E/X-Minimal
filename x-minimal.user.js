@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 極簡｜新舊介面・背景圖片・毛玻璃
 // @namespace    local.x-minimal
-// @version      1.12.3
+// @version      1.12.4
 // @description  精簡 X 新舊介面，自訂背景與 Liquid Glass，附媒體下載與紀錄、影片音量記憶與平衡、選用跨裝置同步及繁體中文設定。
 // @author       TW527E
 // @homepageURL  https://github.com/TW527E/X-Minimal
@@ -153,7 +153,8 @@
   const host = document.createElement('div');
   host.id = 'xm-settings';
   host.dataset.placement = 'menu';
-  const shadow = host.attachShadow({mode:'open'});
+  // Closed, so page scripts cannot read sync keys or WebDAV passwords typed into the settings form.
+  const shadow = host.attachShadow({mode:'closed'});
   document.body.append(host);
   shadow.innerHTML = `
     <style>
@@ -498,7 +499,7 @@
     const animation=dialog.animate(frames,{duration:open?320:280,easing:'linear'});settingsAnimation=animation;
     animation.finished.then(()=>{if(settingsAnimation===animation){settingsAnimation=null;if(!open){dialog.close();dialog.removeAttribute('data-closing');}updateInterfaceGlass();}}).catch(()=>{});
   }
-  function closeSettings(){if(dialog.open&&!dialog.hasAttribute('data-closing'))animateSettings(false);}
+  function closeSettings(){if(dialog.open&&!dialog.hasAttribute('data-closing')){$('#sync-key').value='';$('#sync-password').value='';animateSettings(false);}}
   function openSettings() { if (!dialog.open){subSection=null;settingsView=narrowSettings.matches?'list':'detail';} syncUI(); if (!dialog.open){dialog.showModal();animateSettings(true);updateInterfaceGlass();} status(storageError || '變更會立即儲存。', !!storageError); }
   $('#launcher').addEventListener('click', openSettings);
   for (const id of ['close','toc-close']) $(`#${id}`).addEventListener('click', closeSettings);
@@ -506,6 +507,8 @@
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeSettings();});
   shadow.querySelector('form').addEventListener('submit', event => event.preventDefault());
   shadow.addEventListener('change', event => {
+    // Only real user input may change saved settings.
+    if (!event.isTrusted) return;
     const input = event.target;
     if (input.dataset.key) commit({...settings,[input.dataset.key]:input.type==='checkbox'?input.checked:input.type==='range'?Number(input.value):input.value,...input.dataset.key==='liquidTier'?{liquidLite:input.value==='lite'}:input.dataset.key==='sidebarTier'?{sidebarLite:input.value==='lite'}:{}});
     if (input.dataset.nav) commit({...settings,navHidden:[...shadow.querySelectorAll('[data-nav]:not(:checked)')].map(i=>i.dataset.nav)});
@@ -643,7 +646,7 @@
       if(incoming.background.startsWith('https:')&&incoming.background!==settings.background)warnings.push(`背景圖片來自 ${new URL(incoming.background).host}，該網站會看到你的 IP 位址與瀏覽時間。`);
       if(syncConfig.auto)warnings.push('已開啟自動同步，匯入的設定也會套用到其他裝置。');
       if(warnings.length&&!confirm(`匯入這份設定前請確認：\n\n${warnings.map(text=>`• ${text}`).join('\n')}\n\n只匯入你信任的檔案。要繼續嗎？`)){status('已取消匯入。');return;}
-      imageRequest++;if(commit(data.settings)){if(data.videoVolume!==undefined)saveVideoVolume(data.videoVolume);if(history)saveDownloadHistory(history);}
+      imageRequest++;if(commit(data.settings)){if(data.videoVolume!==undefined)saveVideoVolume(data.videoVolume);if(history)saveDownloadHistory(restoredDownloadHistory(history));}
     }catch(error){status(`匯入失敗：${error.message}`,true);}
   });
   $('#reset').addEventListener('click',()=>{if(confirm(`將所有 X 極簡設定恢復預設，並移除已儲存的背景圖片與影片音量？${syncConfig.auto?'\n\n已開啟自動同步，其他裝置也會一併恢復預設。':''}\n\n下載紀錄與同步連線不受影響。`)){imageRequest++;if(commit(DEFAULTS))saveVideoVolume(null);}});
@@ -712,6 +715,8 @@
     ${ENABLED}[data-xm-center-timeline="true"] [data-xm-old-columns]>[data-xm-sidebar]{flex-shrink:0!important}
     ${ENABLED}[data-xm-image="true"] [data-xm-primary]{background-color:rgb(var(--xm-rgb))!important}
     ${ENABLED}[data-xm-image="true"][data-xm-mode="glass"] [data-xm-primary]{background-color:rgb(var(--xm-rgb) / var(--xm-opacity))!important;backdrop-filter:blur(var(--xm-blur));-webkit-backdrop-filter:blur(var(--xm-blur))}
+    @media(prefers-reduced-transparency:reduce){${ENABLED}[data-xm-image="true"][data-xm-mode="glass"] [data-xm-primary]{background-color:rgb(var(--xm-rgb))!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
+    @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){${ENABLED}[data-xm-image="true"][data-xm-mode="glass"] [data-xm-primary]{background-color:rgb(var(--xm-rgb))!important}}
     ${ENABLED}[data-xm-image="true"][data-xm-mode="liquid"] [data-xm-primary]{background-color:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     ${ENABLED}[data-xm-image="true"]:is([data-xm-mode="glass"],[data-xm-mode="liquid"]) [data-xm-surface]{background-color:transparent!important}
     ${ENABLED}:not([data-xm-sidebar-mode="solid"]) :is([data-slot="xds-menu-content"],[data-slot="xds-popover-content"],[data-slot="xds-hover-card-content"],[data-slot="xds-hovercard-content"],[data-base-ui-focusable][data-open][data-side],[role="menu"]):not([data-xm-ui-glass]){background:rgb(var(--xm-rgb) / max(.8,var(--xm-sidebar-opacity)))!important;backdrop-filter:blur(var(--xm-sidebar-blur));-webkit-backdrop-filter:blur(var(--xm-sidebar-blur))}
@@ -1674,13 +1679,16 @@
       if(!radii.has(target))radii.set(target,Math.max(parseFloat(getComputedStyle(target).borderTopLeftRadius)||0,8));
       radius=radii.get(target);ring.classList.toggle('is-slider',target.matches('[role="slider"],input[type="range"]'));ring.classList.add('is-snapped');ring.classList.toggle('is-wide',wide);ring.classList.toggle('is-nav',!!hit.closest('[data-xm-nav]'));
     }
-    function hitAtPoint(){let el=document.elementFromPoint(px,py),next;while(el?.shadowRoot&&(next=el.shadowRoot.elementFromPoint(px,py))&&next!==el)el=next;return el;}
+    function hitAtPoint(){let el=document.elementFromPoint(px,py),next,root;while((root=el===host?shadow:el?.shadowRoot)&&(next=root.elementFromPoint(px,py))&&next!==el)el=next;return el;}
     function move(e){
       if(!enabled||e.pointerType!=='mouse')return;
       px=e.clientX;py=e.clientY;
       if(down&&!getSelection()?.isCollapsed){hide();return;}
       if(!ring.classList.contains('is-visible')){cur.x=px;cur.y=py;ring.classList.add('is-visible');}
-      pick(e.composedPath().find(node=>node instanceof Element)||null);
+      // 設定面板是封閉 Shadow DOM，composedPath 只看得到 host；在 host 上時改用 hitAtPoint 找到裡面的控制項。
+      let target=e.composedPath().find(node=>node instanceof Element)||null;
+      if(target===host)target=hitAtPoint();
+      pick(target);
       if(following()){cur.x=px;if(!beam)cur.y=py;place();}
       kick();
     }
@@ -2461,9 +2469,14 @@
         const bundles = [...sources].filter(source => /^https:\/\/abs\.twimg\.com\/responsive-web\/client-web(?:-legacy)?\/main\.[\w-]+\.js$/.test(source));
         for (const source of bundles) {
           try {
-            const response = await fetch(source, {credentials: 'omit'});
-            if (!response.ok) continue;
-            const text = await response.text();
+            // A stalled CDN must not block the public-embed fallback below.
+            const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 15000);
+            let text;
+            try {
+              const response = await fetch(source, {credentials: 'omit', signal: abort.signal});
+              if (!response.ok) continue;
+              text = await response.text();
+            } finally { clearTimeout(timer); }
             const match = text.match(/queryId:"([\w-]{8,64})",operationName:"TweetResultByRestId",operationType:"query",metadata:\{featureSwitches:\[([^\]]*)\]/);
             if (!match) continue;
             const switches = [...match[2].matchAll(/"(\w{1,100})"/g)].map(item => item[1]);
@@ -2744,7 +2757,7 @@
     async function run(manual=false){
       if(running){dirty=true;return;}
       const config=syncConfig,connection=config[config.provider];
-      const active=()=>config.provider===syncConfig.provider&&connection===syncConfig[config.provider];
+      const same=JSON.stringify(connection),active=()=>config.provider===syncConfig.provider&&same===JSON.stringify(syncConfig[config.provider]);
       if(!config[config.provider].url){syncMessage='請先設定同步連線。';syncConnectionUI();return;}
       if(!manual&&(!config.auto||Date.now()<retryAt||document.hidden))return;
       running=true;dirty=false;clearTimeout(timer);timer=0;$('#sync-now').disabled=true;syncMessage='正在合併並同步…';syncConnectionUI();
@@ -2903,6 +2916,17 @@
       downloadHistory=pruned;
       try{GM_setValue(DOWNLOAD_KEY,downloadHistory);}catch{throw Error('下載紀錄儲存失敗；請檢查 Tampermonkey storage 空間。');}
     }
+  }
+  // An explicit restore must survive an earlier "clear history": entries older than the
+  // deletion marker would be pruned on merge, so they are stamped as restored now.
+  function restoredDownloadHistory(history){
+    const all=downloadDeleted['*']||0,now=Date.now(),out=Object.create(null);
+    for(const [id,post] of Object.entries(history)){
+      const limit=Math.max(all,downloadDeleted[id]||0),files=Object.create(null);
+      for(const [url,file] of Object.entries(post.files))files[url]=file.downloadedAt>limit?file:{...file,downloadedAt:now};
+      out[id]={...post,files};
+    }
+    return out;
   }
   function saveDownloadHistory(next,notify=true){
     const merged=mergeDownloadHistory(mergeDownloadHistory(downloadHistory,GM_getValue(DOWNLOAD_KEY,{})),next);
